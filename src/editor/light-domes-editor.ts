@@ -1,6 +1,6 @@
 import { html, LitElement, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { fetchNearbyDomes, mergeDomes, OverpassError } from "../data/nearby-cities";
+import { fetchNearbyDomes, mergeDomes, CityLookupError } from "../data/nearby-cities";
 import { homeObserver, resolveSite } from "../data/sites";
 import { editorStyles } from "../styles";
 import type { HomeAssistant, LightDome, Observer, SiteConfig } from "../types";
@@ -73,8 +73,8 @@ export class LightDomesEditor extends LitElement {
       this._emit(merged);
     } catch (err) {
       this._error =
-        err instanceof OverpassError
-          ? `Couldn't reach any OpenStreetMap (Overpass) server: ${err.failures.join("; ")}. They're community-run and often busy, so try again in a few minutes, or add cities manually.`
+        err instanceof CityLookupError
+          ? `Couldn't reach any city data service: ${err.failures.join("; ")}. Try again in a few minutes, or add cities manually.`
           : `Couldn't look up nearby cities (${(err as Error).message}). You can add them manually.`;
     } finally {
       this._busy = false;
@@ -87,7 +87,7 @@ export class LightDomesEditor extends LitElement {
         <h3>Light domes</h3>
         <div class="hint">
           Cities whose glow can wash out the part of the sky you're pointing at. “Find nearby cities” looks up populated places around your
-          Home Assistant location and your sites using OpenStreetMap (one request; results are saved in this card's config).
+          Home Assistant location and your sites using Wikidata, falling back to OpenStreetMap (one request; results are saved in this card's config).
         </div>
         <div class="toolbar" style="margin-bottom:8px">
           <ha-button ?disabled=${this._busy} @click=${this._find}>${this._busy ? "Searching…" : "Find nearby cities"}</ha-button>

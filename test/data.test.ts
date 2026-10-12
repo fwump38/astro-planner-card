@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { computeNight } from "../src/astro/night";
 import { domeGeometry } from "../src/astro/light-domes";
 import { forecastAt, toHourlyForecast } from "../src/data/forecast";
-import { domesFromOverpass, mergeDomes, parsePopulation, type OverpassElement } from "../src/data/nearby-cities";
+import { domesFromOverpass, domesFromPlaces, mergeDomes, parsePopulation, type OverpassElement } from "../src/data/nearby-cities";
 import { DEFAULT_WEIGHTS } from "../src/data/defaults";
 import { classifyNight, hourQuality, scoreNight } from "../src/scoring/score";
 import type { AstroForecastHour, Site } from "../src/types";
@@ -122,5 +122,23 @@ describe("calendar grading", () => {
     expect(classifyNight(120, 120)).toBe("best");
     expect(classifyNight(300, 120)).toBe("best");
     expect(classifyNight(100, 90)).toBe("best");
+  });
+});
+
+describe("city selection across several sites", () => {
+  it("keeps the big city near a remote site even when many small places crowd another site", () => {
+    const home = { latitude: 35.65, longitude: -105.97 };
+    const remote = { latitude: 36.06, longitude: -107.96 };
+    // 30 small suburbs within a few km of home, plus one real city ~80 km from the remote site.
+    const suburbs = Array.from({ length: 30 }, (_, i) => ({
+      name: `Suburb ${i}`,
+      latitude: home.latitude + 0.01 * ((i % 6) - 3),
+      longitude: home.longitude + 0.01 * (Math.floor(i / 6) - 2),
+      population: 2000 + i,
+    }));
+    const farmington = { name: "Farmington", latitude: 36.728, longitude: -108.219, population: 46000 };
+    const names = domesFromPlaces([...suburbs, farmington], [home, remote], 250).map((d) => d.name);
+    expect(names).toContain("Farmington");
+    expect(names.filter((n) => n.startsWith("Suburb")).length).toBeLessThanOrEqual(12);
   });
 });

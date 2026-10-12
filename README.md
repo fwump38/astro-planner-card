@@ -55,7 +55,7 @@ The card reads each instance's coordinates from AstroWeather's latitude/longitud
    - **Drive time** is looked up automatically from your Home Assistant location to each site (see [Privacy](#privacy-and-third-party-services)).
      Enter a value for a site to override it.
    - **Light domes**: press **Find nearby cities** to look up populated places around your Home Assistant location and your sites
-     (via [OpenStreetMap](https://www.openstreetmap.org) / Overpass). The result is stored in the card config; edit or add places freely.
+     (via [Wikidata](https://www.wikidata.org), falling back to [OpenStreetMap](https://www.openstreetmap.org)). The result is stored in the card config; edit or add places freely.
 
 Manual YAML:
 
@@ -119,9 +119,10 @@ Everything is computed in your browser, with two optional lookups that contact p
 - **Drive times** → [OSRM demo server](https://router.project-osrm.org) (`router.project-osrm.org`). It receives your Home Assistant location and each
   site's location, **rounded to about 1 km**, and returns a driving time. Results are cached in the browser's local storage (90 days), so each
   route is requested once. If the server is unreachable, a straight-line estimate is used. Turn it off with `auto_drive_time: false`, or give a site `drive_minutes`.
-- **Nearby cities** → [Overpass API](https://overpass-api.de) servers, only when you press **Find nearby cities** in the editor. The request contains
-  a bounding box around your location and sites. The public servers are community-run and often busy, so the card tries several in turn and
-  reports each failure; if all are busy, retry later or add cities by hand.
+- **Nearby cities** → only when you press **Find nearby cities** in the editor. The card asks the [Wikidata Query Service](https://query.wikidata.org)
+  first and falls back to community-run [Overpass](https://overpass-api.de) (OpenStreetMap) servers if it can't answer. Whichever answers receives a
+  bounding box around your Home Assistant location and your sites. The Overpass servers are often busy or reject requests, so the card tries each in turn
+  and reports every failure; if all fail, retry later or add cities by hand.
 
 ## Development
 
@@ -143,7 +144,7 @@ tracks releases, so Home Assistant then offers the update.
 
 - [AstroWeather](https://github.com/mawinkler/astroweather) by mawinkler: forecast data.
 - [astronomy-engine](https://github.com/cosinekitty/astronomy) by Don Cross: ephemerides.
-- City data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL), fetched on demand via the Overpass API.
+- City data from [Wikidata](https://www.wikidata.org) (CC0), or © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL) via the Overpass API, fetched on demand.
 - Inspired by [Clear Dark Sky](https://www.cleardarksky.com/) and [Capture the Atlas](https://capturetheatlas.com).
 
 ## License
