@@ -1,7 +1,14 @@
 import { distanceKm, glowIndex } from "../astro/light-domes";
 import type { LightDome, Observer } from "../types";
 
-export const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+/** Public Overpass instances, tried in order. They are community-run and often overloaded, so we fall through them. */
+export const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
+export const REQUEST_TIMEOUT_MS = 20000;
 /** Places whose glow index at every site is below this are too small/far to matter. */
 export const GLOW_CUTOFF = 0.005;
 export const MAX_DOMES = 40;
@@ -32,7 +39,7 @@ export function boundingBox(points: Observer[], radiusKm: number): [number, numb
 
 export function overpassQuery(bbox: [number, number, number, number]): string {
   const b = bbox.map((v) => v.toFixed(3)).join(",");
-  return `[out:json][timeout:25];node["place"~"^(city|town)$"]["population"](${b});out body;`;
+  return `[out:json][timeout:20];node["place"~"^(city|town)$"]["population"](${b});out body qt;`;
 }
 
 export function parsePopulation(raw: string | undefined): number {
@@ -64,16 +71,59 @@ export function domesFromOverpass(elements: OverpassElement[], points: Observer[
     .map(({ maxGlow: _maxGlow, ...d }) => d);
 }
 
-export async function fetchNearbyDomes(points: Observer[], radiusKm: number, fetchImpl: typeof fetch = fetch): Promise<LightDome[]> {
+export class OverpassError extends Error {
+  constructor(public failures: string[]) {
+    super(`all ${failures.length} Overpass servers failed: ${failures.join("; ")}`);
+    this.name = "OverpassError";
+  }
+}
+
+async function queryEndpoint(url: string, query: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<OverpassElement[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = (await res.json()) as { elements?: OverpassElement[]; remark?: string };
+    // Overpass reports a server-side timeout as HTTP 200 with an empty result and a remark.
+    if (!json.elements?.length && json.remark) throw new Error(json.remark.slice(0, 80));
+    return json.elements ?? [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function describeFailure(url: string, err: unknown): string {
+  const host = new URL(url).hostname;
+  const e = err as Error;
+  if (e?.name === "AbortError") return `${host}: timed out`;
+  if (e instanceof TypeError) return `${host}: network error (blocked, offline or overloaded)`;
+  return `${host}: ${e?.message ?? e}`;
+}
+
+export async function fetchNearbyDomes(
+  points: Observer[],
+  radiusKm: number,
+  fetchImpl: typeof fetch = fetch,
+  endpoints: string[] = OVERPASS_ENDPOINTS,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<LightDome[]> {
   if (points.length === 0) return [];
-  const res = await fetchImpl(OVERPASS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `data=${encodeURIComponent(overpassQuery(boundingBox(points, radiusKm)))}`,
-  });
-  if (!res.ok) throw new Error(`Overpass API returned ${res.status}`);
-  const json = (await res.json()) as { elements?: OverpassElement[] };
-  return domesFromOverpass(json.elements ?? [], points, radiusKm);
+  const query = overpassQuery(boundingBox(points, radiusKm));
+  const failures: string[] = [];
+  for (const url of endpoints) {
+    try {
+      return domesFromOverpass(await queryEndpoint(url, query, fetchImpl, timeoutMs), points, radiusKm);
+    } catch (err) {
+      failures.push(describeFailure(url, err));
+    }
+  }
+  throw new OverpassError(failures);
 }
 
 /** Merge freshly looked-up domes into an existing list, keeping manual edits for places with the same name. */

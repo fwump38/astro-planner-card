@@ -20,6 +20,9 @@ export function resolveConfig(config: CardConfig): ResolvedConfig {
     max_moon_illumination: config.max_moon_illumination ?? 10,
     weights: { ...DEFAULT_WEIGHTS, ...(config.weights ?? {}) },
     dome_radius_km: config.dome_radius_km ?? 250,
+    auto_drive_time: config.auto_drive_time ?? true,
+    calendar_highlight: config.calendar_highlight ?? true,
+    calendar_best_minutes: config.calendar_best_minutes ?? 120,
     dome_sigma: config.dome_sigma ?? 25,
     dome_warning_threshold: config.dome_warning_threshold ?? 0.15,
   };

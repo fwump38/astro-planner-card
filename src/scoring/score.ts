@@ -92,3 +92,14 @@ export function scoreColorBand(score: number | null): "none" | "poor" | "fair" |
   if (score >= 35) return "fair";
   return "poor";
 }
+
+export type NightClass = "best" | "short" | "none";
+
+/**
+ * Capture the Atlas-style grading of a night by how long the core is up in dark, moonless sky:
+ * "best" (pink), "short" (blue) or "none" (dark).
+ */
+export function classifyNight(gcMinutes: number, bestMinutes: number): NightClass {
+  if (gcMinutes <= 0) return "none";
+  return gcMinutes >= bestMinutes ? "best" : "short";
+}

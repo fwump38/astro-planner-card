@@ -1,9 +1,10 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { formatDrive } from "../data/drive-time";
 import { compassPoint } from "../astro/light-domes";
 import { addDays, type CivilDate, solarNoon } from "../astro/time";
 import { scoreColorBand, type NightScore } from "../scoring/score";
 import { SCORE_COLORS, tiltGlyph } from "./colors";
-import { formatDuration, type ViewContext } from "./context";
+import type { ViewContext } from "./context";
 
 export interface RankingHandlers {
   selectedNight: number;
@@ -18,8 +19,7 @@ export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateRes
   rows.sort((a, b) => (b.scores[selected]?.score ?? -1) - (a.scores[selected]?.score ?? -1));
 
   const best = rows[0]?.scores[selected];
-  const nightLabel = (i: number) =>
-    i === 0 ? "Tonight" : ctx.fmtDay(solarNoon(dates[i], ctx.hass.config.longitude));
+  const nightLabel = (i: number) => (i === 0 ? "Tonight" : ctx.fmtDay(solarNoon(dates[i], ctx.hass.config.longitude)));
 
   if (ctx.sites.length === 0) {
     return html`<div class="empty">Add AstroWeather sites in the card editor to rank them.</div>`;
@@ -34,33 +34,43 @@ export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateRes
           ${coreWindowText(ctx, best)}
         </div>`
       : html`<div class="summary muted">The Milky Way core isn't up after dark ${selected === 0 ? "tonight" : "that night"}.</div>`}
-    <div class="ranking" style="--nights:${dates.length}">
-      <div class="rk-head rk-site">Site</div>
-      ${dates.map(
-        (_, i) => html`<button
-          class="rk-head rk-night ${i === selected ? "selected" : ""}"
-          @click=${() => h.onSelectNight(i)}
-          title="Sort by this night"
-        >
-          ${nightLabel(i)}
-        </button>`,
-      )}
+    <div class="ranking">
+      <div class="rk-headrow">
+        <div class="rk-head rk-site">Site</div>
+        <div class="rk-nights" style="--nights:${dates.length}">
+          ${dates.map(
+            (_, i) => html`<button
+              class="rk-head rk-night ${i === selected ? "selected" : ""}"
+              @click=${() => h.onSelectNight(i)}
+              title="Sort by this night"
+            >
+              ${nightLabel(i)}
+            </button>`,
+          )}
+        </div>
+      </div>
       ${rows.map(
         ({ site, scores }) => html`
-          <div class="rk-site rk-cell">
-            <div class="site-name">${site.name}</div>
-            <div class="site-meta">
-              Bortle ${site.bortle}${site.drive_minutes ? html` · ${formatDuration(site.drive_minutes)} drive` : nothing}
-              ${site.observer ? nothing : html`<span class="warn"> · no coordinates</span>`}
+          <div class="rk-row">
+            <div class="rk-site">
+              <div class="site-name">${site.name}</div>
+              <div class="site-meta">
+                Bortle ${site.bortle}${site.drive_minutes
+                  ? html` · <span title=${site.drive_estimated ? "Estimated driving time from your Home Assistant location" : "Drive time"}>${site.drive_estimated ? "~" : ""}${formatDrive(site.drive_minutes)} drive</span>`
+                  : nothing}
+                ${site.observer ? nothing : html`<span class="warn"> · no coordinates</span>`}
+              </div>
+            </div>
+            <div class="rk-nights" style="--nights:${dates.length}">
+              ${scores.map((s, i) => renderCell(ctx, s, nightLabel(i), () => h.onOpenChart(site.entity)))}
             </div>
           </div>
-          ${scores.map((s) => renderCell(ctx, s, () => h.onOpenChart(site.entity)))}
         `,
       )}
     </div>
     <div class="legend">
-      Score combines forecast (cloud, transparency, seeing, wind) during the core window with window length, light-dome
-      direction and site Bortle. <em>Italic</em> = beyond the forecast (astronomy only).
+      Score combines forecast (cloud, transparency, seeing, wind) during the core window with window length, light-dome direction and site Bortle.
+      <em>Italic</em> = beyond the forecast (astronomy only).
     </div>
   `;
 }
@@ -73,28 +83,31 @@ function coreWindowText(ctx: ViewContext, s: NightScore): TemplateResult {
   >`;
 }
 
-function renderCell(ctx: ViewContext, s: NightScore | null, onClick: () => void): TemplateResult {
-  if (!s) return html`<div class="rk-cell muted">—</div>`;
+function renderCell(ctx: ViewContext, s: NightScore | null, label: string, onClick: () => void): TemplateResult {
+  if (!s) return html`<div class="rk-cell muted"><span class="cell-night">${label}</span>—</div>`;
   const n = s.night;
   if (s.score === null) {
-    return html`<div class="rk-cell muted" title="Core not above ${ctx.config.min_gc_altitude}° while dark">no core</div>`;
+    return html`<div class="rk-cell muted" title="Core not above ${ctx.config.min_gc_altitude}° while dark">
+      <span class="cell-night">${label}</span>no core
+    </div>`;
   }
   const dome = n.worstDome;
   const domeTitle = dome
-    ? `Light dome: ${dome.dome.name}, ${Math.round(dome.distanceKm)} km ${compassPoint(dome.bearing)} (${Math.round(
-        n.domePenalty * 100,
-      )}% penalty)`
+    ? `Light dome: ${dome.dome.name}, ${Math.round(dome.distanceKm)} km ${compassPoint(dome.bearing)} (${Math.round(n.domePenalty * 100)}% penalty)`
     : "";
   return html`<button class="rk-cell rk-score ${s.astroOnly ? "astro-only" : ""}" @click=${onClick} title="Open sky chart">
-    <span class="score-pill" style="background:${SCORE_COLORS[scoreColorBand(s.score)]}">${s.score}</span>
-    <span class="cell-lines">
-      <span class="cell-line">
-        ${n.gcTilt !== null ? tiltGlyph(n.gcTilt, 14) : nothing}
-        ${n.gcStart && n.gcEnd ? `${ctx.fmtTime(n.gcStart)}–${ctx.fmtTime(n.gcEnd)}` : ""}
-      </span>
-      <span class="cell-line small">
-        ${s.cloud !== null ? html`<ha-icon icon="mdi:weather-cloudy"></ha-icon>${Math.round(s.cloud)}%` : s.astroOnly ? "no forecast" : nothing}
-        ${s.domeWarning ? html`<ha-icon class="dome-warn" icon="mdi:city-variant-outline" title=${domeTitle}></ha-icon>` : nothing}
+    <span class="cell-night">${label}</span>
+    <span class="cell-main">
+      <span class="score-pill" style="background:${SCORE_COLORS[scoreColorBand(s.score)]}">${s.score}</span>
+      <span class="cell-lines">
+        <span class="cell-line">
+          ${n.gcTilt !== null ? tiltGlyph(n.gcTilt, 14) : nothing}
+          ${n.gcStart && n.gcEnd ? html`<span class="cell-time">${ctx.fmtTime(n.gcStart)}–${ctx.fmtTime(n.gcEnd)}</span>` : ""}
+        </span>
+        <span class="cell-line small">
+          ${s.cloud !== null ? html`<ha-icon icon="mdi:weather-cloudy"></ha-icon>${Math.round(s.cloud)}%` : s.astroOnly ? "no forecast" : nothing}
+          ${s.domeWarning ? html`<ha-icon class="dome-warn" icon="mdi:city-variant-outline" title=${domeTitle}></ha-icon>` : nothing}
+        </span>
       </span>
     </span>
   </button>`;

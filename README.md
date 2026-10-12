@@ -7,9 +7,10 @@ the [AstroWeather](https://github.com/mawinkler/astroweather) integration for fo
   galactic core is up and dark with moon, light-dome direction and site darkness.
 - **Sky chart**: a [Clear Dark Sky](https://www.cleardarksky.com/)-style hourly chart per site: cloud, transparency, seeing, darkness,
   core altitude, light-dome interference, wind, humidity and temperature.
-- **Calendar**: a month grid in the spirit of [Capture the Atlas](https://capturetheatlas.com)'s Milky Way charts: moon phase, the
-  dusk→dawn bar with the core-up-and-dark window highlighted, window times, and whether the Milky Way will stand *upright*, sit
-  *angled* or lie as a low *arch*. The next few nights also get a forecast score and the best site.
+- **Calendar**: a month grid in the spirit of [Capture the Atlas](https://capturetheatlas.com)'s Milky Way charts, for picking the best
+  nights to go (it isn't tied to one site). Each day shows moon phase, the dusk→dawn bar with the core-up-and-dark window highlighted,
+  window times, and whether the Milky Way will stand *upright*, sit *angled* or lie as a low *arch*. Days can be coloured pink / blue /
+  dark for best / short window / not visible, and the next few nights show the best-scoring site by forecast.
 
 Everything is configurable from the card's visual editor.
 
@@ -51,6 +52,8 @@ The card reads each instance's coordinates from AstroWeather's latitude/longitud
 3. Add the card to a dashboard (**Add card → Milky Way Planner**) and use the editor:
    - **Sites**: add each AstroWeather entity ("Add all AstroWeather entities" is a shortcut). Optionally set a display name, the site's
      [Bortle class](https://en.wikipedia.org/wiki/Bortle_scale) and the drive time.
+   - **Drive time** is looked up automatically from your Home Assistant location to each site (see [Privacy](#privacy-and-third-party-services)).
+     Enter a value for a site to override it.
    - **Light domes**: press **Find nearby cities** to look up populated places around your Home Assistant location and your sites
      (via [OpenStreetMap](https://www.openstreetmap.org) / Overpass). The result is stored in the card config; edit or add places freely.
 
@@ -87,9 +90,11 @@ light_domes:
 | `max_moon_illumination` | `10` | Moon is ignored below the horizon or when ≤ this % lit |
 | `weights` | cloud 3, transparency 2, seeing 0.5, calm 1 | Relative weights of the weather score |
 | `dome_radius_km` | `250` | Search radius for **Find nearby cities** |
+| `auto_drive_time` | `true` | Look up driving time from your Home Assistant location to each site that has no `drive_minutes` |
+| `calendar_highlight` | `true` | Colour calendar days: pink = best, blue = short window, dark = core not visible |
+| `calendar_best_minutes` | `120` | Core window (minutes, in dark moonless sky) a day needs to count as "best" |
 | `dome_sigma` | `25` | (YAML) Angular spread (°) of a city's glow |
 | `dome_warning_threshold` | `0.15` | (YAML) Penalty above which a dome warning shows |
-| `calendar_site` | first site | (YAML) Site shown in the calendar by default |
 
 ## How it works
 
@@ -106,6 +111,17 @@ light_domes:
   fog) × window length × (1 − dome penalty) × a small Bortle factor. Nights beyond AstroWeather's forecast horizon show an
   astronomy-only score in *italics*.
 - Forecasts come from AstroWeather's `weather/subscribe_forecast` hourly feed, so they update live.
+
+## Privacy and third-party services
+
+Everything is computed in your browser, with two optional lookups that contact public services directly from the browser viewing the card:
+
+- **Drive times** → [OSRM demo server](https://router.project-osrm.org) (`router.project-osrm.org`). It receives your Home Assistant location and each
+  site's location, **rounded to about 1 km**, and returns a driving time. Results are cached in the browser's local storage (90 days), so each
+  route is requested once. If the server is unreachable, a straight-line estimate is used. Turn it off with `auto_drive_time: false`, or give a site `drive_minutes`.
+- **Nearby cities** → [Overpass API](https://overpass-api.de) servers, only when you press **Find nearby cities** in the editor. The request contains
+  a bounding box around your location and sites. The public servers are community-run and often busy, so the card tries several in turn and
+  reports each failure; if all are busy, retry later or add cities by hand.
 
 ## Development
 

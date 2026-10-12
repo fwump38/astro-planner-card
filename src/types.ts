@@ -69,7 +69,12 @@ export interface CardConfig {
   min_gc_altitude?: number;
   max_moon_illumination?: number;
   weights?: Partial<ScoreWeights>;
-  calendar_site?: string;
+  /** Look up driving time from the Home Assistant location to each site (unless `drive_minutes` is set). */
+  auto_drive_time?: boolean;
+  /** Colour calendar days pink/blue/dark by how good the core window is. */
+  calendar_highlight?: boolean;
+  /** Minimum dark core window (minutes) for a day to count as "best". */
+  calendar_best_minutes?: number;
   dome_radius_km?: number;
   // YAML-only advanced options
   dome_sigma?: number;
@@ -84,6 +89,9 @@ export interface ResolvedConfig extends CardConfig {
   max_moon_illumination: number;
   weights: ScoreWeights;
   dome_radius_km: number;
+  auto_drive_time: boolean;
+  calendar_highlight: boolean;
+  calendar_best_minutes: number;
   dome_sigma: number;
   dome_warning_threshold: number;
 }
@@ -100,6 +108,8 @@ export interface Site {
   name: string;
   bortle: number;
   drive_minutes?: number;
+  /** True when `drive_minutes` came from routing/estimation rather than the user's config. */
+  drive_estimated?: boolean;
   observer: Observer | null;
 }
 

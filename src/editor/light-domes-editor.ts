@@ -1,6 +1,6 @@
 import { html, LitElement, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { fetchNearbyDomes, mergeDomes } from "../data/nearby-cities";
+import { fetchNearbyDomes, mergeDomes, OverpassError } from "../data/nearby-cities";
 import { homeObserver, resolveSite } from "../data/sites";
 import { editorStyles } from "../styles";
 import type { HomeAssistant, LightDome, Observer, SiteConfig } from "../types";
@@ -72,7 +72,10 @@ export class LightDomesEditor extends LitElement {
       this._status = `Found ${found.length} places within ${this.radiusKm} km; ${merged.length - this.domes.length} added.`;
       this._emit(merged);
     } catch (err) {
-      this._error = `Couldn't look up nearby cities (${(err as Error).message}). You can add them manually.`;
+      this._error =
+        err instanceof OverpassError
+          ? `Couldn't reach any OpenStreetMap (Overpass) server: ${err.failures.join("; ")}. They're community-run and often busy, so try again in a few minutes, or add cities manually.`
+          : `Couldn't look up nearby cities (${(err as Error).message}). You can add them manually.`;
     } finally {
       this._busy = false;
     }

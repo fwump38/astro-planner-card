@@ -29,8 +29,11 @@ const SCHEMA = [
       { name: "min_gc_altitude", selector: { number: { min: 0, max: 45, step: 1, unit_of_measurement: "°", mode: "box" } } },
       { name: "max_moon_illumination", selector: { number: { min: 0, max: 100, step: 1, unit_of_measurement: "%", mode: "box" } } },
       { name: "dome_radius_km", selector: { number: { min: 25, max: 600, step: 25, unit_of_measurement: "km", mode: "box" } } },
+      { name: "calendar_best_minutes", selector: { number: { min: 15, max: 480, step: 15, unit_of_measurement: "min", mode: "box" } } },
     ],
   },
+  { name: "calendar_highlight", selector: { boolean: {} } },
+  { name: "auto_drive_time", selector: { boolean: {} } },
   {
     type: "expandable",
     name: "",
@@ -57,6 +60,9 @@ const LABELS: Record<string, string> = {
   min_gc_altitude: "Minimum core altitude",
   max_moon_illumination: "Max moon illumination when up",
   dome_radius_km: "City search radius",
+  calendar_best_minutes: "Calendar “best” = core window of at least",
+  calendar_highlight: "Colour calendar days pink / blue / dark by core window",
+  auto_drive_time: "Look up drive times from your Home Assistant location",
   weight_cloud: "Cloud weight",
   weight_transparency: "Transparency weight",
   weight_seeing: "Seeing weight",
@@ -88,6 +94,9 @@ export class MilkyWayPlannerCardEditor extends LitElement {
       min_gc_altitude: r.min_gc_altitude,
       max_moon_illumination: r.max_moon_illumination,
       dome_radius_km: r.dome_radius_km,
+      calendar_best_minutes: r.calendar_best_minutes,
+      calendar_highlight: r.calendar_highlight,
+      auto_drive_time: r.auto_drive_time,
       weight_cloud: r.weights.cloud,
       weight_transparency: r.weights.transparency,
       weight_seeing: r.weights.seeing,
@@ -129,7 +138,7 @@ export class MilkyWayPlannerCardEditor extends LitElement {
         @domes-changed=${(e: CustomEvent<{ domes: LightDome[] }>) => this._fire({ ...c, light_domes: e.detail.domes })}
       ></milky-way-planner-domes-editor>
       <div class="hint">
-        Advanced options (YAML only): <code>dome_sigma</code>, <code>dome_warning_threshold</code>, <code>calendar_site</code>, and per-site
+        Advanced options (YAML only): <code>dome_sigma</code>, <code>dome_warning_threshold</code>, and per-site
         <code>latitude</code>/<code>longitude</code> overrides.
       </div>
     `;

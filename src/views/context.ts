@@ -8,6 +8,8 @@ export interface ViewContext {
   hass: HomeAssistant;
   config: ResolvedConfig;
   sites: Site[];
+  /** A neutral site at the centre of the configured sites, for views that aren't about one particular site. */
+  reference: Site;
   /** The civil date whose evening starts "tonight" (yesterday until dawn). */
   tonight: CivilDate;
   forecast(entity: string): HourlyForecast;

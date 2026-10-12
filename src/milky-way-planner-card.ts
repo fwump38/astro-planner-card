@@ -1,14 +1,15 @@
 import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import { computeNight, type NightSummary, type SkyOptions } from "./astro/night";
-import { domeGeometry } from "./astro/light-domes";
+import { distanceKm, domeGeometry } from "./astro/light-domes";
 import { addDays, type CivilDate, civilDateIn, dateKey, makeDayFormatter, makeHourFormatter, makeTimeFormatter } from "./astro/time";
 import { resolveConfig } from "./data/defaults";
 import { EMPTY_FORECAST, type HourlyForecast, subscribeForecasts } from "./data/forecast";
-import { findAstroWeatherEntities, resolveSite } from "./data/sites";
+import { type DriveEstimate, getDriveTime } from "./data/drive-time";
+import { findAstroWeatherEntities, homeObserver, resolveSite } from "./data/sites";
 import { scoreNight, type NightScore } from "./scoring/score";
 import { cardStyles } from "./styles";
-import type { CardConfig, HomeAssistant, ResolvedConfig, Site, TabId } from "./types";
+import type { CardConfig, HomeAssistant, Observer, ResolvedConfig, Site, TabId } from "./types";
 import { renderCalendar } from "./views/calendar-view";
 import type { ViewContext } from "./views/context";
 import { renderRanking } from "./views/ranking-view";
@@ -21,6 +22,23 @@ console.info(
   "color:#fff;background:#3a2a6e;font-weight:700",
   "color:#3a2a6e;background:#e8d9ff",
 );
+
+const REFERENCE_ENTITY = "__reference__";
+
+const driveKey = (from: Observer, to: Observer) => `${from.latitude},${from.longitude}>${to.latitude},${to.longitude}`;
+
+/** A neutral stand-in at the centre of the sites (or home when none), used by views that aren't about one site. */
+function referenceSite(sites: Site[], home: Observer): Site {
+  const located = sites.filter((s) => s.observer);
+  const observer: Observer = located.length
+    ? {
+        latitude: located.reduce((a, s) => a + s.observer!.latitude, 0) / located.length,
+        longitude: located.reduce((a, s) => a + s.observer!.longitude, 0) / located.length,
+        elevation: located.reduce((a, s) => a + (s.observer!.elevation ?? 0), 0) / located.length,
+      }
+    : home;
+  return { entity: REFERENCE_ENTITY, name: "centre of your sites", bortle: 2, observer };
+}
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "ranking", label: "Tonight", icon: "mdi:format-list-numbered" },
@@ -42,7 +60,6 @@ export class MilkyWayPlannerCard extends LitElement {
   @state() private _tab: TabId = "ranking";
   @state() private _selectedNight = 0;
   @state() private _chartEntity = "";
-  @state() private _calEntity = "";
   @state() private _calYear = 0;
   @state() private _calMonth = 0;
 
@@ -55,6 +72,9 @@ export class MilkyWayPlannerCard extends LitElement {
   private _scoreCache = new Map<string, NightScore>();
   private _domeCache = new Map<string, ReturnType<typeof domeGeometry>>();
   private _hassSignature = "";
+  private _driveTimes = new Map<string, DriveEstimate>();
+  private _drivePending = new Set<string>();
+  private _driveQueue: Promise<void> = Promise.resolve();
 
   setConfig(config: CardConfig): void {
     if (!config || !Array.isArray(config.sites)) {
@@ -161,7 +181,21 @@ export class MilkyWayPlannerCard extends LitElement {
     const tz = hass.config.time_zone;
     const lang = hass.locale?.language ?? hass.language ?? "en";
     const fmt = hass.locale?.time_format;
-    const sites: Site[] = config.sites.filter((s) => hass.states[s.entity]).map((s) => resolveSite(hass, s));
+    const home = homeObserver(hass);
+    const sites: Site[] = config.sites
+      .filter((s) => hass.states[s.entity])
+      .map((cfg) => {
+        const site = resolveSite(hass, cfg);
+        if (cfg.drive_minutes === undefined && config.auto_drive_time && site.observer) {
+          const est = this._driveTimes.get(driveKey(home, site.observer));
+          if (est && est.minutes >= 5) {
+            site.drive_minutes = est.minutes;
+            site.drive_estimated = true;
+          } else if (!est) this._requestDriveTime(home, site.observer);
+        }
+        return site;
+      });
+    const reference = referenceSite(sites, home);
 
     const skyOptions = (site: Site): SkyOptions => ({
       minGcAltitude: config.min_gc_altitude,
@@ -190,6 +224,7 @@ export class MilkyWayPlannerCard extends LitElement {
       hass,
       config,
       sites,
+      reference,
       tonight: this._tonight(),
       forecast,
       skyOptions,
@@ -213,7 +248,7 @@ export class MilkyWayPlannerCard extends LitElement {
   }
 
   private _domes(site: Site, config: ResolvedConfig) {
-    if (!site.observer) return [];
+    if (!site.observer || site.entity === REFERENCE_ENTITY) return [];
     const key = `${site.observer.latitude},${site.observer.longitude}|${JSON.stringify(config.light_domes)}`;
     let g = this._domeCache.get(key);
     if (!g) {
@@ -267,17 +302,27 @@ export class MilkyWayPlannerCard extends LitElement {
           : renderCalendar(ctx, {
               year: this._calYear,
               month: this._calMonth,
-              siteEntity: this._calEntity || config.calendar_site || ctx.sites[0]?.entity || "",
               onNavigate: (d) => this._navigate(d),
               onToday: () => {
                 const t = ctx.tonight;
                 this._calYear = t.y;
                 this._calMonth = t.m;
               },
-              onSelectSite: (e) => (this._calEntity = e),
               onOpenChart: (entity) => this._openChart(entity),
             })}
     </ha-card>`;
+  }
+
+  /** Drive times are looked up one at a time (the public routing server asks for modest use) and cached in the browser. */
+  private _requestDriveTime(home: Observer, to: Observer): void {
+    const key = driveKey(home, to);
+    if (this._drivePending.has(key) || distanceKm(home, to) < 1) return;
+    this._drivePending.add(key);
+    this._driveQueue = this._driveQueue.then(async () => {
+      this._driveTimes.set(key, await getDriveTime(home, to));
+      this._drivePending.delete(key);
+      this.requestUpdate();
+    });
   }
 
   private _openChart(entity: string): void {

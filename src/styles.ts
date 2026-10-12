@@ -9,8 +9,11 @@ export const cardStyles = css`
     --col-w: 22px;
   }
   ha-card {
+    display: block;
     padding: 12px;
     overflow: hidden;
+    /* The card's own width, not the screen's, decides the layout (dashboards can be narrow on a big screen). */
+    container-type: inline-size;
   }
   .header {
     display: flex;
@@ -112,10 +115,20 @@ export const cardStyles = css`
     font-size: 0.9em;
   }
   .ranking {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .rk-headrow,
+  .rk-row {
+    display: grid;
+    gap: 6px;
+    grid-template-columns: minmax(110px, 1.2fr) minmax(0, 3fr);
+  }
+  .rk-nights {
     display: grid;
     gap: 4px;
-    grid-template-columns: minmax(110px, 1.3fr) repeat(var(--nights), minmax(96px, 1fr));
-    overflow-x: auto;
+    grid-template-columns: repeat(var(--nights), minmax(0, 1fr));
   }
   .rk-head {
     background: none;
@@ -134,35 +147,50 @@ export const cardStyles = css`
     color: var(--csc-fg);
     font-weight: 500;
   }
-  .rk-cell {
-    align-items: center;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    display: flex;
-    gap: 6px;
-    min-height: 44px;
-    padding: 4px 6px;
-  }
-  button.rk-score {
-    background: rgba(127, 127, 127, 0.08);
-    cursor: pointer;
-    text-align: left;
-  }
-  button.rk-score:hover {
-    border-color: var(--csc-accent);
-  }
   .rk-site {
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 0;
+    align-self: center;
+    min-width: 0;
   }
   .site-name {
     font-weight: 500;
+    overflow-wrap: anywhere;
   }
   .site-meta {
     color: var(--csc-muted);
     font-size: 0.78em;
+  }
+  .rk-cell {
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 0;
+    padding: 4px 6px;
+    text-align: left;
+  }
+  button.rk-score {
+    align-items: stretch;
+    background: rgba(127, 127, 127, 0.08);
+    cursor: pointer;
+  }
+  button.rk-score:hover {
+    border-color: var(--csc-accent);
+  }
+  .cell-night {
+    color: var(--csc-muted);
+    display: none;
+    font-size: 0.72em;
+  }
+  .cell-main {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+    min-width: 0;
   }
   .cell-lines {
     display: flex;
@@ -171,14 +199,51 @@ export const cardStyles = css`
   }
   .cell-line {
     font-size: 0.85em;
-    white-space: nowrap;
+  }
+  .cell-time {
+    overflow-wrap: anywhere;
   }
   .cell-line.small {
     color: var(--csc-muted);
     font-size: 0.75em;
   }
   .tilt {
+    flex: none;
     vertical-align: -2px;
+  }
+
+  /* Narrow cards: each site becomes a block, nights sit side by side beneath its name. */
+  @container (max-width: 560px) {
+    .rk-headrow {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .rk-headrow .rk-site {
+      display: none;
+    }
+    .rk-row {
+      background: rgba(127, 127, 127, 0.05);
+      border-radius: 10px;
+      grid-template-columns: minmax(0, 1fr);
+      padding: 6px;
+    }
+    .rk-nights {
+      gap: 6px;
+      grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+    }
+    .rk-headrow .rk-nights {
+      grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+    }
+    .cell-night {
+      display: block;
+    }
+    .cell-main {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rk-cell {
+      min-height: 0;
+    }
   }
 
   /* Sky chart */
@@ -258,9 +323,6 @@ export const cardStyles = css`
     min-width: 130px;
     text-align: center;
   }
-  .cal-head select {
-    margin-left: auto;
-  }
   .icon-btn,
   .text-btn {
     background: none;
@@ -304,6 +366,46 @@ export const cardStyles = css`
   .cal-day.today {
     outline: 2px solid var(--csc-accent);
     outline-offset: -1px;
+  }
+  .cal-day.grade-best {
+    background: rgba(226, 72, 130, 0.22);
+    border-color: rgba(226, 72, 130, 0.55);
+  }
+  .cal-day.grade-short {
+    background: rgba(66, 133, 224, 0.2);
+    border-color: rgba(66, 133, 224, 0.45);
+  }
+  .cal-day.grade-none {
+    background: rgba(30, 40, 80, 0.2);
+    opacity: 0.7;
+  }
+  .cal-key {
+    align-items: center;
+    color: var(--csc-muted);
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 0.78em;
+    gap: 4px 6px;
+    margin-top: 8px;
+  }
+  .cal-key .key {
+    border-radius: 3px;
+    display: inline-block;
+    height: 12px;
+    margin-left: 8px;
+    width: 12px;
+  }
+  .cal-key .key:first-child {
+    margin-left: 0;
+  }
+  .cal-key .key.best {
+    background: rgba(226, 72, 130, 0.7);
+  }
+  .cal-key .key.short {
+    background: rgba(66, 133, 224, 0.7);
+  }
+  .cal-key .key.none {
+    background: rgba(30, 40, 80, 0.55);
   }
   .cal-top {
     align-items: center;
@@ -353,6 +455,13 @@ export const cardStyles = css`
     margin-top: auto;
     padding: 0;
     text-align: left;
+  }
+  .cal-badge-name {
+    color: var(--csc-muted);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cal-badge .score-pill {
     font-size: 0.7em;

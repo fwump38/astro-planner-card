@@ -21,7 +21,7 @@ const LABELS: Record<string, string> = {
   entity: "AstroWeather entity",
   name: "Display name (optional)",
   bortle: "Bortle class (1–9)",
-  drive_minutes: "Drive time from home",
+  drive_minutes: "Drive time override (optional)",
 };
 
 export class SitesEditor extends LitElement {
@@ -67,8 +67,8 @@ export class SitesEditor extends LitElement {
       <div class="section">
         <h3>Sites</h3>
         <div class="hint">
-          One AstroWeather instance per place you might shoot from — include home as a baseline. Bortle and drive time are for your reference
-          and scoring; coordinates are read from the AstroWeather instance.
+          One AstroWeather instance per place you might shoot from — include home as a baseline. Coordinates are read from the AstroWeather instance, and the
+          drive time from your Home Assistant location is looked up automatically unless you enter your own.
         </div>
         ${this.sites.map(
           (site, i) => html`<div class="row">

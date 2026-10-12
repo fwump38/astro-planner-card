@@ -4,7 +4,7 @@ import { domeGeometry } from "../src/astro/light-domes";
 import { forecastAt, toHourlyForecast } from "../src/data/forecast";
 import { domesFromOverpass, mergeDomes, parsePopulation, type OverpassElement } from "../src/data/nearby-cities";
 import { DEFAULT_WEIGHTS } from "../src/data/defaults";
-import { hourQuality, scoreNight } from "../src/scoring/score";
+import { classifyNight, hourQuality, scoreNight } from "../src/scoring/score";
 import type { AstroForecastHour, Site } from "../src/types";
 import overpass from "./fixtures/overpass.json";
 import realForecast from "./fixtures/astroweather-forecast.json";
@@ -112,5 +112,15 @@ describe("real AstroWeather forecast fixture", () => {
       expect(q).toBeLessThanOrEqual(100);
     }
     expect(quality[3]).toBeGreaterThan(quality[0]); // fully clear beats partly cloudy with light rain
+  });
+});
+
+describe("calendar grading", () => {
+  it("grades nights like Capture the Atlas: best / short / none", () => {
+    expect(classifyNight(0, 120)).toBe("none");
+    expect(classifyNight(45, 120)).toBe("short");
+    expect(classifyNight(120, 120)).toBe("best");
+    expect(classifyNight(300, 120)).toBe("best");
+    expect(classifyNight(100, 90)).toBe("best");
   });
 });
