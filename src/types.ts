@@ -33,6 +33,7 @@ export interface HomeAssistant {
 }
 
 export type TabId = "ranking" | "chart" | "calendar";
+export type SortId = "score" | "distance" | "bortle";
 
 export interface SiteConfig {
   entity: string;
@@ -63,6 +64,10 @@ export interface CardConfig {
   type: string;
   title?: string;
   default_tab?: TabId;
+  /** Tabs to show, in order. Defaults to all three. */
+  tabs?: TabId[];
+  /** Initial sort for the Tonight view. */
+  default_sort?: SortId;
   sites: SiteConfig[];
   light_domes?: LightDome[];
   nights?: number;
@@ -85,6 +90,8 @@ export interface CardConfig {
 
 export interface ResolvedConfig extends CardConfig {
   default_tab: TabId;
+  tabs: TabId[];
+  default_sort: SortId;
   light_domes: LightDome[];
   nights: number;
   min_gc_altitude: number;

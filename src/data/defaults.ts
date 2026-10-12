@@ -1,4 +1,4 @@
-import type { CardConfig, ResolvedConfig, ScoreWeights } from "../types";
+import type { CardConfig, ResolvedConfig, ScoreWeights, TabId } from "../types";
 
 export const DEFAULT_WEIGHTS: ScoreWeights = {
   cloud: 3,
@@ -9,11 +9,17 @@ export const DEFAULT_WEIGHTS: ScoreWeights = {
 
 export const DEFAULT_BORTLE = 3;
 
+export const ALL_TABS: TabId[] = ["ranking", "chart", "calendar"];
+
 export function resolveConfig(config: CardConfig): ResolvedConfig {
+  const tabs = ALL_TABS.filter((t) => (config.tabs ?? ALL_TABS).includes(t));
+  const enabled = tabs.length ? tabs : ALL_TABS;
   return {
     ...config,
     sites: config.sites ?? [],
-    default_tab: config.default_tab ?? "ranking",
+    tabs: enabled,
+    default_tab: enabled.includes(config.default_tab as TabId) ? config.default_tab! : enabled[0],
+    default_sort: config.default_sort ?? "score",
     light_domes: config.light_domes ?? [],
     nights: clamp(config.nights ?? 3, 1, 7),
     min_gc_altitude: config.min_gc_altitude ?? 10,

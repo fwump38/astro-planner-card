@@ -84,7 +84,9 @@ light_domes:
 | `sites` | required | List of `{entity, name?, bortle?, drive_minutes?, latitude?, longitude?}` |
 | `light_domes` | `[]` | List of `{name, latitude, longitude, population}` |
 | `title` | none | Card title |
-| `default_tab` | `ranking` | `ranking`, `chart` or `calendar` |
+| `tabs` | all | Tabs to show, in order: any of `ranking`, `chart`, `calendar`. With one tab the tab bar is hidden |
+| `default_tab` | `ranking` | `ranking`, `chart` or `calendar` (falls back to the first enabled tab) |
+| `default_sort` | `score` | Initial sort on the Tonight view: `score`, `distance` (drive time, shortest first) or `bortle` (darkest first). Also switchable with the chips above the list; ties fall back to score |
 | `nights` | `3` | Nights scored in the ranking and calendar overlay (1–7) |
 | `min_gc_altitude` | `10` | Minimum core altitude (°) to count as usable in the ranking, chart and scores |
 | `max_moon_illumination` | `10` | Moon is ignored below the horizon or when ≤ this % lit |

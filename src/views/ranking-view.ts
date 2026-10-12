@@ -2,23 +2,44 @@ import { html, nothing, type TemplateResult } from "lit";
 import { formatDrive } from "../data/drive-time";
 import { compassPoint } from "../astro/light-domes";
 import { addDays, type CivilDate, solarNoon } from "../astro/time";
+import type { SortId } from "../types";
 import { scoreColorBand, type NightScore } from "../scoring/score";
 import { SCORE_COLORS, tiltGlyph } from "./colors";
 import type { ViewContext } from "./context";
 
 export interface RankingHandlers {
   selectedNight: number;
+  sort: SortId;
+  onSort(sort: SortId): void;
   onSelectNight(index: number): void;
   onOpenChart(entity: string): void;
 }
+
+const SORTS: { id: SortId; label: string }[] = [
+  { id: "score", label: "Score" },
+  { id: "distance", label: "Distance" },
+  { id: "bortle", label: "Bortle" },
+];
 
 export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateResult {
   const dates: CivilDate[] = Array.from({ length: ctx.config.nights }, (_, i) => addDays(ctx.tonight, i));
   const selected = Math.min(h.selectedNight, dates.length - 1);
   const rows = ctx.sites.map((site) => ({ site, scores: dates.map((d) => ctx.score(site, d)) }));
-  rows.sort((a, b) => (b.scores[selected]?.score ?? -1) - (a.scores[selected]?.score ?? -1));
+  const byScore = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+    (b.scores[selected]?.score ?? -1) - (a.scores[selected]?.score ?? -1);
+  // Missing values (no drive time) sort last; ties fall back to score.
+  const key: Record<SortId, (r: (typeof rows)[number]) => number> = {
+    score: () => 0,
+    distance: (r) => r.site.drive_minutes ?? Infinity,
+    bortle: (r) => r.site.bortle,
+  };
+  rows.sort((a, b) => {
+    const d = key[h.sort](a) - key[h.sort](b);
+    return d === 0 || Number.isNaN(d) ? byScore(a, b) : d;
+  });
+  const bestRow = rows.reduce<(typeof rows)[number] | undefined>((m, r) => (!m || byScore(r, m) < 0 ? r : m), undefined);
 
-  const best = rows[0]?.scores[selected];
+  const best = bestRow?.scores[selected];
   const nightLabel = (i: number) => (i === 0 ? "Tonight" : ctx.fmtDay(solarNoon(dates[i], ctx.hass.config.longitude)));
 
   if (ctx.sites.length === 0) {
@@ -34,6 +55,14 @@ export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateRes
           ${coreWindowText(ctx, best)}
         </div>`
       : html`<div class="summary muted">The Milky Way core isn't up after dark ${selected === 0 ? "tonight" : "that night"}.</div>`}
+    <div class="sort-bar" role="group" aria-label="Sort sites">
+      <span class="muted small">Sort by</span>
+      ${SORTS.map(
+        (s) => html`<button class="chip ${h.sort === s.id ? "active" : ""}" aria-pressed=${h.sort === s.id} @click=${() => h.onSort(s.id)}>
+          ${s.label}
+        </button>`,
+      )}
+    </div>
     <div class="ranking">
       <div class="rk-headrow">
         <div class="rk-head rk-site">Site</div>
@@ -42,7 +71,7 @@ export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateRes
             (_, i) => html`<button
               class="rk-head rk-night ${i === selected ? "selected" : ""}"
               @click=${() => h.onSelectNight(i)}
-              title="Sort by this night"
+              title="Score and summarise this night"
             >
               ${nightLabel(i)}
             </button>`,

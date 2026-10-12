@@ -9,9 +9,36 @@ import "./sites-editor";
 const SCHEMA = [
   { name: "title", selector: { text: {} } },
   {
+    name: "tabs",
+    selector: {
+      select: {
+        multiple: true,
+        mode: "list",
+        options: [
+          { value: "ranking", label: "Tonight / ranking" },
+          { value: "chart", label: "Sky chart" },
+          { value: "calendar", label: "Calendar" },
+        ],
+      },
+    },
+  },
+  {
     type: "grid",
     name: "",
     schema: [
+      {
+        name: "default_sort",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: "score", label: "Score" },
+              { value: "distance", label: "Distance (drive time)" },
+              { value: "bortle", label: "Bortle (darkest first)" },
+            ],
+          },
+        },
+      },
       {
         name: "default_tab",
         selector: {
@@ -56,7 +83,9 @@ const SCHEMA = [
 
 const LABELS: Record<string, string> = {
   title: "Title (optional)",
+  tabs: "Tabs to show",
   default_tab: "Starting tab",
+  default_sort: "Tonight: sort sites by",
   nights: "Nights to forecast (1–7)",
   min_gc_altitude: "Minimum core altitude",
   max_moon_illumination: "Max moon illumination when up",
@@ -91,7 +120,9 @@ export class MilkyWayPlannerCardEditor extends LitElement {
     const r = resolveConfig(c);
     return {
       title: c.title,
+      tabs: r.tabs,
       default_tab: r.default_tab,
+      default_sort: r.default_sort,
       nights: r.nights,
       min_gc_altitude: r.min_gc_altitude,
       max_moon_illumination: r.max_moon_illumination,

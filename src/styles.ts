@@ -119,6 +119,28 @@ export const cardStyles = css`
     flex-direction: column;
     gap: 4px;
   }
+  .sort-bar {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .chip {
+    background: none;
+    border: 1px solid var(--csc-border);
+    border-radius: 12px;
+    color: var(--csc-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85em;
+    padding: 2px 10px;
+  }
+  .chip.active {
+    border-color: var(--csc-accent);
+    color: var(--csc-fg);
+    font-weight: 500;
+  }
   .rk-headrow,
   .rk-row {
     display: grid;

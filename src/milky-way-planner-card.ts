@@ -9,7 +9,7 @@ import { type DriveEstimate, getDriveTime } from "./data/drive-time";
 import { findAstroWeatherEntities, homeObserver, resolveSite } from "./data/sites";
 import { scoreNight, type NightScore } from "./scoring/score";
 import { cardStyles } from "./styles";
-import type { CardConfig, HomeAssistant, Observer, ResolvedConfig, Site, TabId } from "./types";
+import type { CardConfig, HomeAssistant, Observer, ResolvedConfig, Site, SortId, TabId } from "./types";
 import { renderCalendar } from "./views/calendar-view";
 import type { ViewContext } from "./views/context";
 import { renderRanking } from "./views/ranking-view";
@@ -59,6 +59,7 @@ export class MilkyWayPlannerCard extends LitElement {
 
   @state() private _tab: TabId = "ranking";
   @state() private _selectedNight = 0;
+  @state() private _sort: SortId = "score";
   @state() private _chartEntity = "";
   @state() private _calYear = 0;
   @state() private _calMonth = 0;
@@ -82,6 +83,7 @@ export class MilkyWayPlannerCard extends LitElement {
     }
     this._config = resolveConfig(config);
     this._tab = this._config.default_tab;
+    this._sort = this._config.default_sort;
     this._nightCache.clear();
     this._scoreCache.clear();
     this._domeCache.clear();
@@ -274,8 +276,9 @@ export class MilkyWayPlannerCard extends LitElement {
 
     return html`<ha-card>
       ${config.title ? html`<div class="header"><div class="title">${config.title}</div></div>` : nothing}
-      <div class="tabs" role="tablist">
-        ${TABS.map(
+      ${config.tabs.length > 1
+        ? html`<div class="tabs" role="tablist">
+        ${TABS.filter((t) => config.tabs.includes(t.id)).map(
           (t) => html`<button
             class="tab ${this._tab === t.id ? "active" : ""}"
             role="tab"
@@ -285,13 +288,16 @@ export class MilkyWayPlannerCard extends LitElement {
             ${t.label}
           </button>`,
         )}
-      </div>
+      </div>`
+        : nothing}
       ${missing.length
         ? html`<div class="warn small" style="margin-bottom:8px">Entity not found: ${missing.join(", ")}</div>`
         : nothing}
       ${this._tab === "ranking"
         ? renderRanking(ctx, {
             selectedNight: this._selectedNight,
+            sort: this._sort,
+            onSort: (s) => (this._sort = s),
             onSelectNight: (i) => (this._selectedNight = i),
             onOpenChart: (entity) => this._openChart(entity),
           })
@@ -328,7 +334,7 @@ export class MilkyWayPlannerCard extends LitElement {
 
   private _openChart(entity: string): void {
     this._chartEntity = entity;
-    this._tab = "chart";
+    if (this._config?.tabs.includes("chart")) this._tab = "chart";
   }
 
   private _navigate(delta: number): void {
