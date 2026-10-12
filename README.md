@@ -47,6 +47,8 @@ The card reads each instance's coordinates from AstroWeather's latitude/longitud
 
 ## Installation
 
+[![Open your Home Assistant instance and open this repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fwump38&repository=milky-way-planner-card&category=plugin)
+
 1. HACS → ⋮ → **Custom repositories** → add this repository, category **Dashboard** (Lovelace).
 2. Install **Milky Way Planner Card** and reload the browser.
 3. Add the card to a dashboard (**Add card → Milky Way Planner**) and use the editor:
