@@ -44,3 +44,25 @@ describe("matches Capture the Atlas 2026 (Kanab, 37°N)", () => {
     });
   }
 });
+
+describe("calendar grading matches the Capture the Atlas colour rule", () => {
+  // Calendar defaults: core counted from the horizon, moonless (≤10% lit counts as fine), best = at least 3 hours.
+  const CALENDAR_OPTS = { minGcAltitude: 0, maxMoonIllumination: 10, bortle: 2, domes: [], domeSigma: 25 };
+  const BEST_MINUTES = 180;
+
+  it("agrees with the colour of at least 49 of the 52 weekly rows and tracks window length", async () => {
+    const { addDays } = await import("../src/astro/time");
+    const { classifyNight } = await import("../src/scoring/score");
+    const ref = (await import("./fixtures/cta-2026.json")).default as { rows: { color: string; coreMinutes: number }[] };
+    let agree = 0;
+    let err = 0;
+    for (let i = 0; i < ref.rows.length; i++) {
+      const night = computeNight(addDays({ y: 2026, m: 1, d: 3 }, 7 * i), KANAB, CALENDAR_OPTS, 5);
+      const want = ref.rows[i].color === "pink" ? "best" : ref.rows[i].color === "blue" ? "short" : "none";
+      if (classifyNight(night.gcMinutes, BEST_MINUTES) === want) agree++;
+      err += Math.abs(night.gcMinutes - ref.rows[i].coreMinutes);
+    }
+    expect(agree).toBeGreaterThanOrEqual(49);
+    expect(err / ref.rows.length).toBeLessThan(10); // minutes, averaged over all rows
+  });
+});

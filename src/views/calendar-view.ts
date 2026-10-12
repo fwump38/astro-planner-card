@@ -55,7 +55,7 @@ export function renderCalendar(ctx: ViewContext, h: CalendarHandlers): TemplateR
       : nothing}
     <div class="legend">
       Each day is the night that <em>starts</em> that evening, computed for the middle of your sites. The bar runs dusk → dawn; purple marks when the
-      core is up (above ${ctx.config.min_gc_altitude}°) in dark sky with the moon down or under ${ctx.config.max_moon_illumination}% lit, and the pale strip
+      core is above ${ctx.config.calendar_min_altitude}° in dark sky with the moon down or under ${ctx.config.max_moon_illumination}% lit, and the pale strip
       shows the moon being up. For the next ${ctx.config.nights} nights, the badge is the best-scoring site by forecast.
     </div>
   `;
@@ -104,8 +104,17 @@ function renderDay(ctx: ViewContext, date: CivilDate, overlay: boolean, isTonigh
             ${formatDuration(night.gcMinutes)} · ${night.orientation}${night.gcAzimuthStart !== null ? ` · ${compassPoint(night.gcAzimuthStart)}→${compassPoint(night.gcAzimuthEnd!)}` : ""}
           </div>`
       : html`<div class="cal-text small muted">${night.moonIllumination > 0.5 ? "moonlit" : "no core"}</div>`}
+    ${moonNote(ctx, night)}
     ${best ? renderBadge(best, () => h.onOpenChart(best.site.entity)) : nothing}
   </div>`;
+}
+
+/** When the moon sets or rises during the night, say so: it's why a bright-moon night can still be a good one. */
+function moonNote(ctx: ViewContext, night: NightSummary): TemplateResult | typeof nothing {
+  const parts: string[] = [];
+  if (night.moonSet) parts.push(`moon sets ${ctx.fmtTime(night.moonSet)}`);
+  if (night.moonRise) parts.push(`moon rises ${ctx.fmtTime(night.moonRise)}`);
+  return parts.length ? html`<div class="cal-text small muted cal-moonnote">${parts.join(" · ")}</div>` : nothing;
 }
 
 function bestSite(ctx: ViewContext, date: CivilDate): NightScore | null {

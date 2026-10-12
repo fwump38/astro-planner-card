@@ -198,14 +198,15 @@ export class MilkyWayPlannerCard extends LitElement {
     const reference = referenceSite(sites, home);
 
     const skyOptions = (site: Site): SkyOptions => ({
-      minGcAltitude: config.min_gc_altitude,
+      // The calendar answers "which nights", measured like Capture the Atlas (core above the horizon); the ranking uses your usable altitude.
+      minGcAltitude: site.entity === REFERENCE_ENTITY ? config.calendar_min_altitude : config.min_gc_altitude,
       maxMoonIllumination: config.max_moon_illumination,
       bortle: site.bortle,
       domes: this._domes(site, config),
       domeSigma: config.dome_sigma,
     });
     const optsKey = (site: Site) =>
-      `${site.entity}|${site.observer?.latitude},${site.observer?.longitude}|${site.bortle}|${config.min_gc_altitude}|${config.max_moon_illumination}|${config.dome_sigma}|${config.light_domes.length}`;
+      `${site.entity}|${site.observer?.latitude},${site.observer?.longitude}|${site.bortle}|${site.entity === REFERENCE_ENTITY ? config.calendar_min_altitude : config.min_gc_altitude}|${config.max_moon_illumination}|${config.dome_sigma}|${config.light_domes.length}`;
 
     const night = (site: Site, date: CivilDate): NightSummary | null => {
       if (!site.observer) return null;

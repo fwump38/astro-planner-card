@@ -86,20 +86,23 @@ light_domes:
 | `title` | none | Card title |
 | `default_tab` | `ranking` | `ranking`, `chart` or `calendar` |
 | `nights` | `3` | Nights scored in the ranking and calendar overlay (1–7) |
-| `min_gc_altitude` | `10` | Minimum core altitude (°) to count as visible. Capture the Atlas counts the core from the horizon; set `0` to match its windows |
+| `min_gc_altitude` | `10` | Minimum core altitude (°) to count as usable in the ranking, chart and scores |
 | `max_moon_illumination` | `10` | Moon is ignored below the horizon or when ≤ this % lit |
 | `weights` | cloud 3, transparency 2, seeing 0.5, calm 1 | Relative weights of the weather score |
 | `dome_radius_km` | `250` | Search radius for **Find nearby cities** |
 | `auto_drive_time` | `true` | Look up driving time from your Home Assistant location to each site that has no `drive_minutes` |
 | `calendar_highlight` | `true` | Colour calendar days: pink = best, blue = short window, dark = core not visible |
-| `calendar_best_minutes` | `120` | Core window (minutes, in dark moonless sky) a day needs to count as "best" |
+| `calendar_best_minutes` | `180` | Core window (minutes, in dark moonless sky) a day needs to count as "best" (pink) |
+| `calendar_min_altitude` | `0` | Altitude (°) above which the core counts in the calendar. Capture the Atlas counts from the horizon, so the calendar does too; `min_gc_altitude` (default 10°) applies to the ranking and chart |
 | `dome_sigma` | `25` | (YAML) Angular spread (°) of a city's glow |
 | `dome_warning_threshold` | `0.15` | (YAML) Penalty above which a dome warning shows |
 
 ## How it works
 
-- **Accuracy**: with `min_gc_altitude: 0` and the moon ignored, the computed core windows for 37°N agree with Capture the Atlas's 2026
-  calendar to within a few minutes (checked in `test/capturetheatlas.test.ts`), and so does the arch/angled/upright progression.
+- **Accuracy**: the computed core windows for 37°N agree with Capture the Atlas's 2026 calendar to within a few minutes, and so does the
+  arch/angled/upright progression. The calendar's colours follow the same rule they use: pink when the moonless core window is at least
+  3 hours, blue when it's shorter, dark when there is none. That matches the colour of 50 of the 52 weekly rows in their table
+  (see `test/capturetheatlas.test.ts`); the other two are within minutes of the cutoff.
 - **Sun, moon and galactic center positions** are computed in the browser with
   [astronomy-engine](https://github.com/cosinekitty/astronomy). A night is "dark" when the sun is below −18° and the moon is down or
   nearly new; the core window is the dark time with the core above your minimum altitude.

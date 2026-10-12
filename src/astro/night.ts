@@ -37,6 +37,9 @@ export interface NightSummary {
   stepMinutes: number;
   moonPhase: number; // degrees, 0 = new, 180 = full
   moonIllumination: number; // 0–1 at local midnight
+  /** First moonrise / moonset between dusk and dawn, if any. */
+  moonRise: Date | null;
+  moonSet: Date | null;
   darkMinutes: number;
   gcMinutes: number;
   gcStart: Date | null;
@@ -123,6 +126,15 @@ export function computeNight(date: CivilDate, observer: Observer, opts: SkyOptio
   let worstScore = 0;
   for (const [g, v] of worstCount) if (v > worstScore) [worstDome, worstScore] = [g, v];
 
+  let moonRise: Date | null = null;
+  let moonSet: Date | null = null;
+  for (let i = 1; i < samples.length; i++) {
+    const was = samples[i - 1].moonAltitude > -0.5;
+    const now = samples[i].moonAltitude > -0.5;
+    if (!was && now) moonRise ??= samples[i].time;
+    if (was && !now) moonSet ??= samples[i].time;
+  }
+
   return {
     key: dateKey(date),
     date,
@@ -132,6 +144,8 @@ export function computeNight(date: CivilDate, observer: Observer, opts: SkyOptio
     stepMinutes,
     moonPhase: MoonPhase(midnight),
     moonIllumination: Illumination(Body.Moon, midnight).phase_fraction,
+    moonRise,
+    moonSet,
     darkMinutes: samples.filter((s) => s.dark).length * stepMinutes,
     gcMinutes: visible.length * stepMinutes,
     gcStart: first?.time ?? null,

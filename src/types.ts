@@ -75,6 +75,8 @@ export interface CardConfig {
   calendar_highlight?: boolean;
   /** Minimum dark core window (minutes) for a day to count as "best". */
   calendar_best_minutes?: number;
+  /** Minimum core altitude for the calendar. Capture the Atlas counts the core from the horizon, so this defaults to 0. */
+  calendar_min_altitude?: number;
   dome_radius_km?: number;
   // YAML-only advanced options
   dome_sigma?: number;
@@ -92,6 +94,7 @@ export interface ResolvedConfig extends CardConfig {
   auto_drive_time: boolean;
   calendar_highlight: boolean;
   calendar_best_minutes: number;
+  calendar_min_altitude: number;
   dome_sigma: number;
   dome_warning_threshold: number;
 }
