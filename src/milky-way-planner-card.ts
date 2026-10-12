@@ -6,6 +6,7 @@ import { addDays, type CivilDate, civilDateIn, dateKey, makeDayFormatter, makeHo
 import { resolveConfig } from "./data/defaults";
 import { EMPTY_FORECAST, type HourlyForecast, subscribeForecasts } from "./data/forecast";
 import { type DriveEstimate, getDriveTime } from "./data/drive-time";
+import { IntegrationNights } from "./data/integration";
 import { findAstroWeatherEntities, homeObserver, resolveSite } from "./data/sites";
 import { scoreNight, type NightScore } from "./scoring/score";
 import { cardStyles } from "./styles";
@@ -72,6 +73,10 @@ export class MilkyWayPlannerCard extends LitElement {
   private _nightCache = new Map<string, NightSummary>();
   private _scoreCache = new Map<string, NightScore>();
   private _domeCache = new Map<string, ReturnType<typeof domeGeometry>>();
+  private _integration = new IntegrationNights(() => {
+    this._scoreCache.clear();
+    this.requestUpdate();
+  });
   private _hassSignature = "";
   private _driveTimes = new Map<string, DriveEstimate>();
   private _drivePending = new Set<string>();
@@ -87,6 +92,7 @@ export class MilkyWayPlannerCard extends LitElement {
     this._nightCache.clear();
     this._scoreCache.clear();
     this._domeCache.clear();
+    this._integration.clear();
     this._subscribedKey = "";
     this._ensureSubscriptions();
   }
@@ -213,6 +219,23 @@ export class MilkyWayPlannerCard extends LitElement {
     const night = (site: Site, date: CivilDate): NightSummary | null => {
       if (!site.observer) return null;
       const key = `${optsKey(site)}|${dateKey(date)}`;
+      // Prefer the integration's result; until it arrives (or if it isn't installed) the card computes the same thing itself.
+      const remote = this._integration.get(key);
+      if (remote) return remote;
+      if (config.use_integration && site.observer) {
+        const opts = skyOptions(site);
+        this._integration.request(hass, {
+          key,
+          group: optsKey(site),
+          date,
+          observer: site.observer,
+          bortle: site.bortle,
+          minGcAltitude: opts.minGcAltitude,
+          maxMoonIllumination: opts.maxMoonIllumination,
+          domes: site.entity === REFERENCE_ENTITY ? [] : config.light_domes,
+          domeSigma: opts.domeSigma,
+        });
+      }
       let n = this._nightCache.get(key);
       if (!n) {
         n = computeNight(date, site.observer, skyOptions(site));

@@ -27,6 +27,7 @@ export function resolveConfig(config: CardConfig): ResolvedConfig {
     weights: { ...DEFAULT_WEIGHTS, ...(config.weights ?? {}) },
     dome_radius_km: config.dome_radius_km ?? 250,
     auto_drive_time: config.auto_drive_time ?? true,
+    use_integration: config.use_integration ?? true,
     calendar_highlight: config.calendar_highlight ?? true,
     calendar_best_minutes: config.calendar_best_minutes ?? 180,
     calendar_min_altitude: config.calendar_min_altitude ?? 0,

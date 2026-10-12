@@ -20,11 +20,13 @@ export interface HomeAssistant {
   states: Record<string, HassEntityState>;
   entities?: Record<string, HassEntityRegistryEntry>;
   connection: HassConnection;
+  callWS?<T>(msg: Record<string, unknown>): Promise<T>;
   config: {
     latitude: number;
     longitude: number;
     elevation?: number;
     time_zone: string;
+    components?: string[];
     unit_system?: { temperature?: string; wind_speed?: string; length?: string };
   };
   locale?: { language?: string; time_format?: "language" | "system" | "12" | "24" };
@@ -74,6 +76,8 @@ export interface CardConfig {
   min_gc_altitude?: number;
   max_moon_illumination?: number;
   weights?: Partial<ScoreWeights>;
+  /** Use the Milky Way Planner integration for astronomy when it is installed (the card calculates it itself otherwise). */
+  use_integration?: boolean;
   /** Look up driving time from the Home Assistant location to each site (unless `drive_minutes` is set). */
   auto_drive_time?: boolean;
   /** Colour calendar days pink/blue/dark by how good the core window is. */
@@ -99,6 +103,7 @@ export interface ResolvedConfig extends CardConfig {
   weights: ScoreWeights;
   dome_radius_km: number;
   auto_drive_time: boolean;
+  use_integration: boolean;
   calendar_highlight: boolean;
   calendar_best_minutes: number;
   calendar_min_altitude: number;

@@ -93,11 +93,20 @@ light_domes:
 | `weights` | cloud 3, transparency 2, seeing 0.5, calm 1 | Relative weights of the weather score |
 | `dome_radius_km` | `250` | Search radius for **Find nearby cities** |
 | `auto_drive_time` | `true` | Look up driving time from your Home Assistant location to each site that has no `drive_minutes` |
+| `use_integration` | `true` | Use the [Milky Way Planner integration](https://github.com/fwump38/milky-way-planner) for the astronomy when it is installed. The card calculates the same numbers itself otherwise (and while waiting), so it works fine without it |
 | `calendar_highlight` | `true` | Colour calendar days: pink = best, blue = short window, dark = core not visible |
 | `calendar_best_minutes` | `180` | Core window (minutes, in dark moonless sky) a day needs to count as "best" (pink) |
 | `calendar_min_altitude` | `0` | Altitude (°) above which the core counts in the calendar. Capture the Atlas counts from the horizon, so the calendar does too; `min_gc_altitude` (default 10°) applies to the ranking and chart |
 | `dome_sigma` | `25` | (YAML) Angular spread (°) of a city's glow |
 | `dome_warning_threshold` | `0.15` | (YAML) Penalty above which a dome warning shows |
+
+## Optional: Milky Way Planner integration
+
+The card works on its own. If you also install the companion [Milky Way Planner integration](https://github.com/fwump38/milky-way-planner)
+(via HACS), the card automatically takes its astronomy (nights, core windows, moon rise/set) from it instead of calculating it in your browser. The
+numbers are identical, and the card falls back to its own calculations if the integration is missing or unreachable. The integration also gives you
+Home Assistant calendars of the pink and blue nights, galactic core and moon sensors, alert events and a `best_night` service for automations.
+Set `use_integration: false` to always use the card's own calculations.
 
 ## How it works
 

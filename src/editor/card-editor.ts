@@ -62,6 +62,7 @@ const SCHEMA = [
   },
   { name: "calendar_highlight", selector: { boolean: {} } },
   { name: "auto_drive_time", selector: { boolean: {} } },
+  { name: "use_integration", selector: { boolean: {} } },
   {
     type: "expandable",
     name: "",
@@ -94,6 +95,7 @@ const LABELS: Record<string, string> = {
   calendar_min_altitude: "Calendar: core counts above",
   calendar_highlight: "Colour calendar days pink / blue / dark by core window",
   auto_drive_time: "Look up drive times from your Home Assistant location",
+  use_integration: "Use the Milky Way Planner integration for astronomy when installed",
   weight_cloud: "Cloud weight",
   weight_transparency: "Transparency weight",
   weight_seeing: "Seeing weight",
@@ -131,6 +133,7 @@ export class MilkyWayPlannerCardEditor extends LitElement {
       calendar_min_altitude: r.calendar_min_altitude,
       calendar_highlight: r.calendar_highlight,
       auto_drive_time: r.auto_drive_time,
+      use_integration: r.use_integration,
       weight_cloud: r.weights.cloud,
       weight_transparency: r.weights.transparency,
       weight_seeing: r.weights.seeing,
