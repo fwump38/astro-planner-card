@@ -101,6 +101,7 @@
     });
     card.hass = hass;
 
+    if (new URLSearchParams(location.search).has("bare")) document.querySelector(".bar").style.display = "none";
     document.getElementById("dark").addEventListener("change", (e) => document.body.classList.toggle("dark", e.target.checked));
   </script>
 </body>
