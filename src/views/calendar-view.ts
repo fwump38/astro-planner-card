@@ -29,7 +29,7 @@ export function renderCalendar(ctx: ViewContext, h: CalendarHandlers): TemplateR
   const cells: (CivilDate | null)[] = [...Array(lead).fill(null), ...Array.from({ length: count }, (_, i) => ({ y: h.year, m: h.month, d: i + 1 }))];
   while (cells.length % 7) cells.push(null);
 
-  const overlayDates = new Set(Array.from({ length: ctx.config.nights }, (_, i) => dateKey(addDays(ctx.tonight, i))));
+  const overlayDates = new Set(Array.from({ length: ctx.settings.nights }, (_, i) => dateKey(addDays(ctx.tonight, i))));
   const dayTonight = dateKey(ctx.tonight);
   const highlight = ctx.config.calendar_highlight;
 
@@ -48,21 +48,22 @@ export function renderCalendar(ctx: ViewContext, h: CalendarHandlers): TemplateR
     </div>
     ${highlight
       ? html`<div class="cal-key">
-          <span class="key best"></span>Best: core up ${formatDuration(ctx.config.calendar_best_minutes)}+ in dark, moonless sky
+          <span class="key best"></span>Best: core up ${formatDuration(ctx.settings.calendar_best_minutes)}+ in dark, moonless sky
           <span class="key short"></span>Short window
           <span class="key none"></span>Not visible
         </div>`
       : nothing}
     <div class="legend">
       Each day is the night that <em>starts</em> that evening, computed for the middle of your sites. The bar runs dusk → dawn; purple marks when the
-      core is above ${ctx.config.calendar_min_altitude}° in dark sky with the moon down or under ${ctx.config.max_moon_illumination}% lit, and the pale strip
-      shows the moon being up. For the next ${ctx.config.nights} nights, the badge is the best-scoring site by forecast.
+      core is above ${ctx.settings.calendar_min_altitude}° in dark sky with the moon down or under ${ctx.settings.max_moon_illumination}% lit, and the pale strip
+      shows the moon being up. For the next ${ctx.settings.nights} nights, the badge is the best-scoring site by forecast.
     </div>
   `;
 }
 
 function renderDay(ctx: ViewContext, date: CivilDate, overlay: boolean, isTonight: boolean, highlight: boolean, h: CalendarHandlers): TemplateResult {
-  const night = ctx.night(ctx.reference, date);
+  const night = ctx.calendarNight(date);
+  if (night === undefined) return html`<div class="cal-day"><span class="cal-num">${date.d}</span><span class="muted small">…</span></div>`;
   if (!night || !night.dusk || !night.dawn) {
     return html`<div class="cal-day"><span class="cal-num">${date.d}</span><span class="muted small">no dark</span></div>`;
   }
@@ -70,7 +71,7 @@ function renderDay(ctx: ViewContext, date: CivilDate, overlay: boolean, isTonigh
   const span = night.dawn.getTime() - dusk;
   const pct = (t: number) => `${(((t - dusk) / span) * 100).toFixed(2)}%`;
   const hasCore = night.gcMinutes > 0;
-  const grade = classifyNight(night.gcMinutes, ctx.config.calendar_best_minutes);
+  const grade = classifyNight(night.gcMinutes, ctx.settings.calendar_best_minutes);
   const moonlit = night.samples.length ? night.samples.filter((s) => !s.dark).length / night.samples.length : 0;
 
   // Contiguous visible stretches for the timeline bar.

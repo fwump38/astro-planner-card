@@ -1,16 +1,12 @@
-import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
-import { computeNight, type NightSummary, type SkyOptions } from "./astro/night";
-import { distanceKm, domeGeometry } from "./astro/light-domes";
-import { addDays, type CivilDate, civilDateIn, dateKey, makeDayFormatter, makeHourFormatter, makeTimeFormatter } from "./astro/time";
+import type { NightSummary } from "./astro/night";
+import { dateKey, daysInMonth, makeDayFormatter, makeHourFormatter, makeTimeFormatter } from "./astro/time";
 import { resolveConfig } from "./data/defaults";
 import { EMPTY_FORECAST, type HourlyForecast, subscribeForecasts } from "./data/forecast";
-import { type DriveEstimate, getDriveTime } from "./data/drive-time";
-import { INTEGRATION_DOMAIN, IntegrationNights, integrationInstalled } from "./data/integration";
-import { findAstroWeatherEntities, homeObserver, resolveSite } from "./data/sites";
-import { scoreNight, type NightScore } from "./scoring/score";
+import { fetchCalendar, fetchOverview, fetchSkyHours, INTEGRATION_URL, integrationInstalled, type Overview, type SkyHour } from "./data/integration";
 import { cardStyles } from "./styles";
-import type { CardConfig, HomeAssistant, LightDome, Observer, ResolvedConfig, Site, SortId, TabId } from "./types";
+import type { CardConfig, HomeAssistant, ResolvedConfig, Site, SortId, TabId } from "./types";
 import { renderCalendar } from "./views/calendar-view";
 import type { ViewContext } from "./views/context";
 import { renderRanking } from "./views/ranking-view";
@@ -24,22 +20,12 @@ console.info(
   "color:#3a2a6e;background:#e8d9ff",
 );
 
-const REFERENCE_ENTITY = "__reference__";
+const REFRESH_MS = 5 * 60e3;
+const RETRY_MS = 60e3;
+const MAX_SKY_CACHE = 40;
 
-const driveKey = (from: Observer, to: Observer) => `${from.latitude},${from.longitude}>${to.latitude},${to.longitude}`;
-
-/** A neutral stand-in at the centre of the sites (or home when none), used by views that aren't about one site. */
-function referenceSite(sites: Site[], home: Observer): Site {
-  const located = sites.filter((s) => s.observer);
-  const observer: Observer = located.length
-    ? {
-        latitude: located.reduce((a, s) => a + s.observer!.latitude, 0) / located.length,
-        longitude: located.reduce((a, s) => a + s.observer!.longitude, 0) / located.length,
-        elevation: located.reduce((a, s) => a + (s.observer!.elevation ?? 0), 0) / located.length,
-      }
-    : home;
-  return { entity: REFERENCE_ENTITY, name: "centre of your sites", bortle: 2, observer };
-}
+const errorText = (err: unknown): string =>
+  err instanceof Error ? err.message : String((err as { message?: string; code?: string })?.message ?? (err as { code?: string })?.code ?? err);
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "ranking", label: "Tonight", icon: "mdi:format-list-numbered" },
@@ -54,8 +40,8 @@ export class MilkyWayPlannerCard extends LitElement {
     return document.createElement("milky-way-planner-card-editor");
   }
 
-  static getStubConfig(hass: HomeAssistant): Partial<CardConfig> {
-    return { sites: findAstroWeatherEntities(hass).map((entity) => ({ entity })) };
+  static getStubConfig(): Partial<CardConfig> {
+    return {};
   }
 
   @state() private _tab: TabId = "ranking";
@@ -64,58 +50,45 @@ export class MilkyWayPlannerCard extends LitElement {
   @state() private _chartEntity = "";
   @state() private _calYear = 0;
   @state() private _calMonth = 0;
+  @state() private _error = "";
 
   private _config?: ResolvedConfig;
   private _hass?: HomeAssistant;
+  private _overview?: Overview;
+  private _overviewSignature = "";
+  private _loading = false;
+  private _retryAt = 0;
+  private _timer?: ReturnType<typeof setInterval>;
   private _forecasts = new Map<string, HourlyForecast>();
   private _unsubscribe?: () => void;
   private _subscribedKey = "";
-  private _nightCache = new Map<string, NightSummary>();
-  private _scoreCache = new Map<string, NightScore>();
-  private _domeCache = new Map<string, ReturnType<typeof domeGeometry>>();
-  private _integration = new IntegrationNights(() => {
-    this._scoreCache.clear();
-    this.requestUpdate();
-  });
-  private _integrationDomes: LightDome[] = [];
-  private _domesRequested = false;
+  private _calendar = new Map<string, NightSummary>();
+  private _calendarRequested = new Set<string>();
+  private _sky = new Map<string, SkyHour[]>();
+  private _skyRequested = new Set<string>();
   private _hassSignature = "";
-  private _driveTimes = new Map<string, DriveEstimate>();
-  private _drivePending = new Set<string>();
-  private _driveQueue: Promise<void> = Promise.resolve();
 
   setConfig(config: CardConfig): void {
-    if (!config || !Array.isArray(config.sites)) {
-      throw new Error("milky-way-planner-card: `sites` must be a list of AstroWeather weather entities");
-    }
+    if (!config) throw new Error("milky-way-planner-card: missing configuration");
     this._config = resolveConfig(config);
     this._tab = this._config.default_tab;
     this._sort = this._config.default_sort;
-    this._nightCache.clear();
-    this._scoreCache.clear();
-    this._domeCache.clear();
-    this._integration.clear();
-    this._integrationDomes = [];
-    this._domesRequested = false;
     this._subscribedKey = "";
     this._ensureSubscriptions();
-    this._ensureIntegrationDomes();
+    this._refresh();
   }
 
   set hass(hass: HomeAssistant) {
-    const first = !this._hass;
     this._hass = hass;
-    // Re-render only when something we display changed (HA pushes `hass` on every state change).
-    const sig = (this._config?.sites ?? [])
-      .map((s) => `${s.entity}:${hass.states[s.entity]?.last_updated ?? ""}`)
-      .join("|") + `${hass.config.latitude},${hass.config.longitude},${hass.config.time_zone}`;
-    if (first || sig !== this._hassSignature) {
+    // Re-fetch when a site's weather entity changed (HA pushes `hass` on every state change, so compare only what we care about).
+    const sig = (this._overview?.sites ?? []).map((s) => `${s.entity}:${hass.states[s.entity]?.last_updated ?? ""}`).join("|");
+    if (sig !== this._hassSignature) {
       this._hassSignature = sig;
-      this._scoreCache.clear();
-      this.requestUpdate();
+      if (this._overview) this._refresh();
     }
+    if (!this._overview) this._refresh();
+    this.requestUpdate();
     this._ensureSubscriptions();
-    this._ensureIntegrationDomes();
   }
 
   get hass(): HomeAssistant | undefined {
@@ -128,45 +101,63 @@ export class MilkyWayPlannerCard extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    this._timer = setInterval(() => this._refresh(), REFRESH_MS);
     this._ensureSubscriptions();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    clearInterval(this._timer);
     this._unsubscribe?.();
     this._unsubscribe = undefined;
     this._subscribedKey = "";
   }
 
-  /** With no light domes in the card's own config, use the list stored in the integration (if installed). */
-  private _ensureIntegrationDomes(): void {
+  /** Ask the integration for the sites and their scored nights (one request at a time, backed off after an error). */
+  private _refresh(): void {
     const hass = this._hass;
-    const cfg = this._config;
-    if (this._domesRequested || !hass || !cfg || cfg.light_domes.length > 0 || !cfg.use_integration || !integrationInstalled(hass)) return;
-    this._domesRequested = true;
-    hass
-      .callWS!<{ domes: LightDome[] }>({ type: `${INTEGRATION_DOMAIN}/light_domes` })
-      .then((res) => {
-        if (!res.domes?.length) return;
-        this._integrationDomes = res.domes;
-        this._nightCache.clear();
-        this._scoreCache.clear();
-        this._integration.clear();
-        this.requestUpdate();
+    if (!hass || !this._config || this._loading || Date.now() < this._retryAt || !integrationInstalled(hass)) return;
+    this._loading = true;
+    fetchOverview(hass)
+      .then((overview) => {
+        // Anything derived from the integration's settings is stale once those change.
+        const sig = JSON.stringify([overview.settings, overview.reference, overview.sites.map((s) => [s.entity, s.bortle, s.observer])]);
+        if (sig !== this._overviewSignature) {
+          this._overviewSignature = sig;
+          this._calendar.clear();
+          this._calendarRequested.clear();
+          this._sky.clear();
+          this._skyRequested.clear();
+        }
+        this._overview = overview;
+        this._error = "";
+        if (this._calYear === 0) {
+          this._calYear = overview.tonight.y;
+          this._calMonth = overview.tonight.m;
+        }
+        this._ensureSubscriptions();
       })
-      .catch((err) => console.warn("milky-way-planner-card: couldn't read the integration's light domes", err));
+      .catch((err) => {
+        this._error = errorText(err);
+        this._retryAt = Date.now() + RETRY_MS;
+        console.warn("milky-way-planner-card: couldn't read the integration", err);
+      })
+      .finally(() => {
+        this._loading = false;
+        this.requestUpdate();
+      });
   }
 
-  /** The card's own list wins; otherwise the integration's. */
-  private _lightDomes(config: ResolvedConfig): LightDome[] {
-    return config.light_domes.length ? config.light_domes : this._integrationDomes;
+  private _visibleSites(): Site[] {
+    const all = this._overview?.sites ?? [];
+    const only = this._config?.site_filter ?? [];
+    return only.length ? all.filter((s) => only.includes(s.entity)) : all;
   }
 
   private _ensureSubscriptions(): void {
     const hass = this._hass;
-    const cfg = this._config;
-    if (!hass || !cfg || !this.isConnected) return;
-    const entities = [...new Set(cfg.sites.map((s) => s.entity).filter((e) => hass.states[e]))];
+    if (!hass || !this._overview || !this.isConnected) return;
+    const entities = this._visibleSites().map((s) => s.entity).filter((e) => hass.states[e]);
     const key = entities.join(",");
     if (key === this._subscribedKey) return;
     this._subscribedKey = key;
@@ -175,7 +166,6 @@ export class MilkyWayPlannerCard extends LitElement {
     if (entities.length === 0) return;
     subscribeForecasts(hass, entities, (entity, forecast) => {
       this._forecasts.set(entity, forecast);
-      this._scoreCache.clear();
       this.requestUpdate();
     }).then((unsub) => {
       // If the subscription set changed while we were connecting, drop this one.
@@ -184,22 +174,41 @@ export class MilkyWayPlannerCard extends LitElement {
     });
   }
 
-  protected willUpdate(changed: PropertyValues): void {
-    if (this._calYear === 0 && this._hass && this._config) {
-      const t = this._tonight();
-      this._calYear = t.y;
-      this._calMonth = t.m;
-    }
-    super.willUpdate(changed);
+  /** Load the calendar's nights for a month once. */
+  private _ensureCalendar(year: number, month: number): void {
+    const hass = this._hass;
+    const key = `${year}-${month}`;
+    if (!hass || !this._overview || this._calendarRequested.has(key)) return;
+    this._calendarRequested.add(key);
+    fetchCalendar(hass, dateKey({ y: year, m: month, d: 1 }), daysInMonth(year, month))
+      .then((nights) => {
+        for (const n of nights) this._calendar.set(n.key, n);
+        this.requestUpdate();
+      })
+      .catch((err) => {
+        this._error = errorText(err);
+        setTimeout(() => this._calendarRequested.delete(key), RETRY_MS);
+      });
   }
 
-  private _tonight(): CivilDate {
-    const hass = this._hass!;
-    const tz = hass.config.time_zone;
-    const now = new Date();
-    const today = civilDateIn(now, tz);
-    // Before ~6am the night that matters began yesterday evening.
-    return this._localHour(now) < 6 ? addDays(today, -1) : today;
+  private _skyHours(entity: string, from: number, hours: number): SkyHour[] | undefined {
+    const key = `${entity}|${from}|${hours}`;
+    const hit = this._sky.get(key);
+    if (hit) return hit;
+    const hass = this._hass;
+    if (!hass || this._skyRequested.has(key)) return undefined;
+    this._skyRequested.add(key);
+    fetchSkyHours(hass, entity, from, hours)
+      .then((res) => {
+        if (this._sky.size >= MAX_SKY_CACHE) this._sky.clear();
+        this._sky.set(key, res);
+        this.requestUpdate();
+      })
+      .catch((err) => {
+        this._error = errorText(err);
+        setTimeout(() => this._skyRequested.delete(key), RETRY_MS);
+      });
+    return undefined;
   }
 
   private _localHour = (d: Date): number => {
@@ -213,89 +222,21 @@ export class MilkyWayPlannerCard extends LitElement {
     return get("hour") + get("minute") / 60;
   };
 
-  private _context(): ViewContext {
+  private _context(overview: Overview): ViewContext {
     const hass = this._hass!;
-    const config = this._config!;
     const tz = hass.config.time_zone;
     const lang = hass.locale?.language ?? hass.language ?? "en";
     const fmt = hass.locale?.time_format;
-    const home = homeObserver(hass);
-    const sites: Site[] = config.sites
-      .filter((s) => hass.states[s.entity])
-      .map((cfg) => {
-        const site = resolveSite(hass, cfg);
-        if (cfg.drive_minutes === undefined && config.auto_drive_time && site.observer) {
-          const est = this._driveTimes.get(driveKey(home, site.observer));
-          if (est && est.minutes >= 5) {
-            site.drive_minutes = est.minutes;
-            site.drive_estimated = true;
-          } else if (!est) this._requestDriveTime(home, site.observer);
-        }
-        return site;
-      });
-    const reference = referenceSite(sites, home);
-
-    const skyOptions = (site: Site): SkyOptions => ({
-      // The calendar answers "which nights", measured like Capture the Atlas (core above the horizon); the ranking uses your usable altitude.
-      minGcAltitude: site.entity === REFERENCE_ENTITY ? config.calendar_min_altitude : config.min_gc_altitude,
-      maxMoonIllumination: config.max_moon_illumination,
-      bortle: site.bortle,
-      domes: this._domes(site, config),
-      domeSigma: config.dome_sigma,
-    });
-    const optsKey = (site: Site) =>
-      `${site.entity}|${site.observer?.latitude},${site.observer?.longitude}|${site.bortle}|${site.entity === REFERENCE_ENTITY ? config.calendar_min_altitude : config.min_gc_altitude}|${config.max_moon_illumination}|${config.dome_sigma}|${this._lightDomes(config).length}`;
-
-    const night = (site: Site, date: CivilDate): NightSummary | null => {
-      if (!site.observer) return null;
-      const key = `${optsKey(site)}|${dateKey(date)}`;
-      // Prefer the integration's result; until it arrives (or if it isn't installed) the card computes the same thing itself.
-      const remote = this._integration.get(key);
-      if (remote) return remote;
-      if (config.use_integration && site.observer) {
-        const opts = skyOptions(site);
-        this._integration.request(hass, {
-          key,
-          group: optsKey(site),
-          date,
-          observer: site.observer,
-          bortle: site.bortle,
-          minGcAltitude: opts.minGcAltitude,
-          maxMoonIllumination: opts.maxMoonIllumination,
-          domes: site.entity === REFERENCE_ENTITY ? [] : this._lightDomes(config),
-          domeSigma: opts.domeSigma,
-        });
-      }
-      let n = this._nightCache.get(key);
-      if (!n) {
-        n = computeNight(date, site.observer, skyOptions(site));
-        if (this._nightCache.size > 600) this._nightCache.clear();
-        this._nightCache.set(key, n);
-      }
-      return n;
-    };
-    const forecast = (entity: string) => this._forecasts.get(entity) ?? EMPTY_FORECAST;
-
     return {
       hass,
-      config,
-      sites,
-      reference,
-      tonight: this._tonight(),
-      forecast,
-      skyOptions,
-      night,
-      score: (site, date) => {
-        const n = night(site, date);
-        if (!n) return null;
-        const key = `${optsKey(site)}|${dateKey(date)}`;
-        let s = this._scoreCache.get(key);
-        if (!s) {
-          s = scoreNight(site, n, forecast(site.entity), config.weights, config.dome_warning_threshold);
-          this._scoreCache.set(key, s);
-        }
-        return s;
-      },
+      config: this._config!,
+      settings: overview.settings,
+      sites: this._visibleSites(),
+      tonight: overview.tonight,
+      forecast: (entity) => this._forecasts.get(entity) ?? EMPTY_FORECAST,
+      calendarNight: (date) => this._calendar.get(dateKey(date)),
+      score: (site, date) => overview.scores.get(site.entity)?.get(dateKey(date)) ?? null,
+      skyHours: (entity, from, hours) => this._skyHours(entity, from, hours),
       fmtTime: makeTimeFormatter(tz, lang, fmt),
       fmtHour: makeHourFormatter(tz, lang, fmt),
       fmtDay: makeDayFormatter(tz, lang),
@@ -303,30 +244,33 @@ export class MilkyWayPlannerCard extends LitElement {
     };
   }
 
-  private _domes(site: Site, config: ResolvedConfig) {
-    if (!site.observer || site.entity === REFERENCE_ENTITY) return [];
-    const domes = this._lightDomes(config);
-    const key = `${site.observer.latitude},${site.observer.longitude}|${JSON.stringify(domes)}`;
-    let g = this._domeCache.get(key);
-    if (!g) {
-      g = domeGeometry(site.observer, domes);
-      this._domeCache.set(key, g);
-    }
-    return g;
-  }
-
   protected render(): TemplateResult {
     if (!this._config || !this._hass) return html``;
     const config = this._config;
-    if (config.sites.length === 0) {
+    if (!integrationInstalled(this._hass)) {
       return html`<ha-card>
         <div class="empty">
-          Add one or more AstroWeather <code>weather.*</code> entities as sites in the card editor.
+          This card needs the <a href=${INTEGRATION_URL} target="_blank" rel="noreferrer">Milky Way Planner integration</a>, which
+          does the astronomy and scoring. Install it from HACS, then add it under Settings → Devices &amp; services.
         </div>
       </ha-card>`;
     }
-    const ctx = this._context();
-    const missing = config.sites.filter((s) => !this._hass!.states[s.entity]).map((s) => s.entity);
+    const overview = this._overview;
+    if (!overview) {
+      return html`<ha-card>
+        <div class="empty">${this._error ? html`<span class="warn">${this._error}</span>` : "Loading from the Milky Way Planner integration…"}</div>
+      </ha-card>`;
+    }
+    if (overview.sites.length === 0) {
+      return html`<ha-card>
+        <div class="empty">
+          The Milky Way Planner integration has no sites yet. Add your AstroWeather sites in its settings (Settings → Devices &amp; services
+          → Milky Way Planner → Configure).
+        </div>
+      </ha-card>`;
+    }
+    const ctx = this._context(overview);
+    if (this._tab === "calendar") this._ensureCalendar(this._calYear, this._calMonth);
 
     return html`<ha-card>
       ${config.title ? html`<div class="header"><div class="title">${config.title}</div></div>` : nothing}
@@ -344,9 +288,7 @@ export class MilkyWayPlannerCard extends LitElement {
         )}
       </div>`
         : nothing}
-      ${missing.length
-        ? html`<div class="warn small" style="margin-bottom:8px">Entity not found: ${missing.join(", ")}</div>`
-        : nothing}
+      ${this._error ? html`<div class="warn small" style="margin-bottom:8px">${this._error}</div>` : nothing}
       ${this._tab === "ranking"
         ? renderRanking(ctx, {
             selectedNight: this._selectedNight,
@@ -374,18 +316,6 @@ export class MilkyWayPlannerCard extends LitElement {
     </ha-card>`;
   }
 
-  /** Drive times are looked up one at a time (the public routing server asks for modest use) and cached in the browser. */
-  private _requestDriveTime(home: Observer, to: Observer): void {
-    const key = driveKey(home, to);
-    if (this._drivePending.has(key) || distanceKm(home, to) < 1) return;
-    this._drivePending.add(key);
-    this._driveQueue = this._driveQueue.then(async () => {
-      this._driveTimes.set(key, await getDriveTime(home, to));
-      this._drivePending.delete(key);
-      this.requestUpdate();
-    });
-  }
-
   private _openChart(entity: string): void {
     this._chartEntity = entity;
     if (this._config?.tabs.includes("chart")) this._tab = "chart";
@@ -411,6 +341,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "milky-way-planner-card",
   name: "Milky Way Planner",
-  description: "Rank dark-sky sites, chart hourly sky conditions and plan Milky Way core nights using AstroWeather.",
+  description: "Rank dark-sky sites, chart hourly sky conditions and plan Milky Way core nights, from the Milky Way Planner integration.",
   preview: false,
 });

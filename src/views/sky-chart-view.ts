@@ -1,8 +1,8 @@
 import { html, nothing, type TemplateResult } from "lit";
-import { sampleSky } from "../astro/night";
 import { addDays, type CivilDate } from "../astro/time";
-import { forecastAt } from "../data/forecast";
-import type { AstroForecastHour, Site } from "../types";
+import { forecastAt, type HourlyForecast } from "../data/forecast";
+import type { SkyHour } from "../data/integration";
+import type { AstroForecastHour } from "../types";
 import { darknessColor, domeColor, gcColor, goodColor, tempColor } from "./colors";
 import type { ViewContext } from "./context";
 
@@ -111,7 +111,7 @@ const ROWS: Row[] = [
 ];
 
 export function renderSkyChart(ctx: ViewContext, h: ChartHandlers): TemplateResult {
-  if (ctx.sites.length === 0) return html`<div class="empty">Add AstroWeather sites in the card editor.</div>`;
+  if (ctx.sites.length === 0) return html`<div class="empty">Add AstroWeather sites in the Milky Way Planner integration's settings.</div>`;
   const site = ctx.sites.find((s) => s.entity === h.selectedEntity) ?? ctx.sites[0];
   const options = html`<select
     class="site-select"
@@ -123,14 +123,19 @@ export function renderSkyChart(ctx: ViewContext, h: ChartHandlers): TemplateResu
   if (!site.observer) {
     return html`<div class="chart-head">${options}</div>
       <div class="empty">
-        Couldn't read ${site.name}'s coordinates. Enable AstroWeather's latitude/longitude sensors, or set them for this site in the card.
+        Couldn't read ${site.name}'s coordinates. Enable AstroWeather's latitude/longitude sensors, or set them for this site in the integration's site settings.
       </div>`;
   }
 
   const forecast = ctx.forecast(site.entity);
-  const columns = buildColumns(ctx, site, forecast.hours.length ? forecast.hours[0].time : null, forecast.end);
-  if (columns.length === 0) {
+  if (forecast.hours.length === 0) {
     return html`<div class="chart-head">${options}</div><div class="empty">Waiting for ${site.name}'s forecast…</div>`;
+  }
+  const range = chartRange(forecast);
+  const sky = ctx.skyHours(site.entity, range.from, range.hours);
+  const columns = sky ? buildColumns(ctx, forecast, sky) : [];
+  if (columns.length === 0) {
+    return html`<div class="chart-head">${options}</div><div class="empty">Loading ${site.name}'s sky…</div>`;
   }
 
   // Day separators: where the local date changes.
@@ -186,32 +191,30 @@ export function renderSkyChart(ctx: ViewContext, h: ChartHandlers): TemplateResu
   `;
 }
 
-function buildColumns(ctx: ViewContext, site: Site, start: number | null, end: number | null): Column[] {
-  const observer = site.observer!;
-  const forecast = ctx.forecast(site.entity);
-  const opts = ctx.skyOptions(site);
-  const startMs = Math.floor((start ?? Date.now()) / 3600e3) * 3600e3;
-  const fcEnd = end ?? startMs + 48 * 3600e3;
+/** The hours the chart covers: from about now to the end of the forecast (at least a day, at most three). */
+export function chartRange(forecast: HourlyForecast, now = Date.now()): { from: number; hours: number } {
+  const startMs = Math.floor((forecast.start ?? now) / 3600e3) * 3600e3;
+  const fcEnd = forecast.end ?? startMs + 48 * 3600e3;
   const horizon = Math.max(fcEnd, startMs + 24 * 3600e3);
-  const from = Math.max(startMs, Math.floor(Date.now() / 3600e3) * 3600e3 - 3600e3);
-  const columns: Column[] = [];
-  for (let t = from; t <= Math.min(horizon, from + 72 * 3600e3); t += 3600e3) {
-    const time = new Date(t);
-    const s = sampleSky(time, observer, opts);
-    columns.push({
-      time,
-      fc: forecastAt(forecast, time),
-      sunAlt: s.sunAltitude,
-      moonAlt: s.moonAltitude,
-      lm: s.limitingMagnitude,
-      gcAlt: s.gc.altitude,
-      domePenalty: s.dome.penalty,
-      gcVisible: s.gcVisible,
-      localHour: ctx.localHour(time),
-      fahrenheit: ctx.hass.config.unit_system?.temperature?.includes("F") ?? false,
-    });
-  }
-  return columns;
+  const from = Math.max(startMs, Math.floor(now / 3600e3) * 3600e3 - 3600e3);
+  const to = Math.min(horizon, from + 72 * 3600e3);
+  return { from, hours: Math.max(1, Math.floor((to - from) / 3600e3) + 1) };
+}
+
+function buildColumns(ctx: ViewContext, forecast: HourlyForecast, sky: SkyHour[]): Column[] {
+  const fahrenheit = ctx.hass.config.unit_system?.temperature?.includes("F") ?? false;
+  return sky.map((s) => ({
+    time: s.time,
+    fc: forecastAt(forecast, s.time),
+    sunAlt: s.sunAltitude,
+    moonAlt: s.moonAltitude,
+    lm: s.limitingMagnitude,
+    gcAlt: s.gcAltitude,
+    domePenalty: s.domePenalty,
+    gcVisible: s.gcVisible,
+    localHour: ctx.localHour(s.time),
+    fahrenheit,
+  }));
 }
 
 // Re-export for the card shell, keeps tonight/addDays imports tree-shakeable together.

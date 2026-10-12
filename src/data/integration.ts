@@ -1,28 +1,17 @@
 import type { NightSummary, SkySample } from "../astro/night";
 import { classifyOrientation } from "../astro/galactic-center";
 import type { DomeGeometry } from "../astro/light-domes";
-import { addDays, type CivilDate, dateKey } from "../astro/time";
-import type { HomeAssistant, LightDome, Observer } from "../types";
+import type { CivilDate } from "../astro/time";
+import type { NightScore } from "../scoring/score";
+import type { HomeAssistant, Observer, PlannerSettings, Site } from "../types";
 
-/** The Milky Way Planner integration (https://github.com/fwump38/milky-way-planner) computes the same nights server-side. */
+/**
+ * The Milky Way Planner integration (https://github.com/fwump38/milky-way-planner) does all the astronomy and scoring;
+ * this card only asks it for the results and draws them.
+ */
 export const INTEGRATION_DOMAIN = "milky_way_planner";
-const API_VERSION = 1;
-const RETRY_AFTER_MS = 5 * 60e3;
-const MAX_DAYS = 62;
-
-export interface NightRequest {
-  /** Matches the card's own night-cache key, so a result can be served in place of a local computation. */
-  key: string;
-  /** Requests with the same group key share observer and options, and are batched into one call. */
-  group: string;
-  date: CivilDate;
-  observer: Observer;
-  bortle: number;
-  minGcAltitude: number;
-  maxMoonIllumination: number;
-  domes: LightDome[];
-  domeSigma: number;
-}
+export const INTEGRATION_URL = "https://github.com/fwump38/milky-way-planner";
+const API_VERSION = 2;
 
 interface WireSample {
   t: number;
@@ -109,98 +98,119 @@ export function nightFromWire(w: WireNight): NightSummary {
   };
 }
 
-/** Groups sorted dates into runs of consecutive days, each at most `max` long. */
-export function contiguousRuns(dates: CivilDate[], max = MAX_DAYS): CivilDate[][] {
-  const sorted = [...dates].sort((a, b) => dateKey(a).localeCompare(dateKey(b)));
-  const runs: CivilDate[][] = [];
-  for (const d of sorted) {
-    const run = runs[runs.length - 1];
-    const last = run?.[run.length - 1];
-    if (run && last && dateKey(addDays(last, 1)) === dateKey(d) && run.length < max) run.push(d);
-    else runs.push([d]);
-  }
-  return runs;
+
+interface WireSite {
+  entity: string;
+  name: string;
+  bortle: number;
+  drive_minutes: number | null;
+  drive_estimated: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  elevation: number | null;
+  source: { coordinates: string | null; bortle: string; drive_time: string | null };
+}
+
+interface WireScore {
+  date: string;
+  score: number | null;
+  astro_only: boolean;
+  weather: number | null;
+  cloud: number | null;
+  dome_warning: boolean;
+  night: WireNight;
+}
+
+interface WireOverview {
+  api_version: number;
+  tonight: string;
+  reference: Observer;
+  settings: PlannerSettings;
+  sites: WireSite[];
+  scores: Record<string, WireScore[]>;
+  forecast_end: Record<string, string>;
+}
+
+/** What the card shows: the integration's sites and each site's scored nights, keyed by site entity then date. */
+export interface Overview {
+  tonight: CivilDate;
+  reference: Observer;
+  settings: PlannerSettings;
+  sites: Site[];
+  scores: Map<string, Map<string, NightScore>>;
+}
+
+/** One hour of sky conditions at a site, for the sky chart. */
+export interface SkyHour {
+  time: Date;
+  sunAltitude: number;
+  moonAltitude: number;
+  limitingMagnitude: number;
+  gcAltitude: number;
+  gcVisible: boolean;
+  domePenalty: number;
 }
 
 export function integrationInstalled(hass: HomeAssistant): boolean {
   return Boolean(hass.config.components?.includes(INTEGRATION_DOMAIN) && hass.callWS);
 }
 
-/**
- * Fetches nights from the integration and serves them back by cache key. The card keeps computing locally in the
- * meantime (and whenever the integration is missing or errors), so it never depends on the integration being there.
- */
-export class IntegrationNights {
-  private results = new Map<string, NightSummary>();
-  private requested = new Set<string>();
-  private queue = new Map<string, NightRequest[]>();
-  private failedUntil = 0;
-  private scheduled = false;
-
-  constructor(private onChange: () => void) {}
-
-  get(key: string): NightSummary | undefined {
-    return this.results.get(key);
+async function call<T extends { api_version: number }>(hass: HomeAssistant, msg: Record<string, unknown>): Promise<T> {
+  const res = await hass.callWS!<T>({ ...msg, type: `${INTEGRATION_DOMAIN}/${msg.type}` });
+  if (res.api_version !== API_VERSION) {
+    throw new Error(`The Milky Way Planner integration speaks API ${res.api_version}; this card needs ${API_VERSION}. Update both from HACS.`);
   }
+  return res;
+}
 
-  clear(): void {
-    this.results.clear();
-    this.requested.clear();
-    this.queue.clear();
-  }
+const parseDate = (s: string): CivilDate => {
+  const [y, m, d] = s.split("-").map(Number);
+  return { y, m, d };
+};
 
-  /** Queue a request (deduplicated); the batch is sent on the next microtask. */
-  request(hass: HomeAssistant, req: NightRequest): void {
-    if (!integrationInstalled(hass) || Date.now() < this.failedUntil) return;
-    if (this.results.has(req.key) || this.requested.has(req.key)) return;
-    this.requested.add(req.key);
-    const group = this.queue.get(req.group) ?? [];
-    group.push(req);
-    this.queue.set(req.group, group);
-    if (!this.scheduled) {
-      this.scheduled = true;
-      queueMicrotask(() => void this.flush(hass));
+export function overviewFromWire(w: WireOverview): Overview {
+  const sites: Site[] = w.sites.map((s) => ({
+    entity: s.entity,
+    name: s.name,
+    bortle: s.bortle,
+    bortle_estimated: s.source.bortle === "estimated" || s.source.bortle === "default",
+    drive_minutes: s.drive_minutes,
+    drive_estimated: s.drive_estimated,
+    observer: s.latitude !== null && s.longitude !== null ? { latitude: s.latitude, longitude: s.longitude, elevation: s.elevation ?? undefined } : null,
+  }));
+  const scores = new Map<string, Map<string, NightScore>>();
+  for (const site of sites) {
+    const rows = new Map<string, NightScore>();
+    for (const r of w.scores[site.entity] ?? []) {
+      rows.set(r.date, { site, night: nightFromWire(r.night), score: r.score, astroOnly: r.astro_only, weather: r.weather, cloud: r.cloud, domeWarning: r.dome_warning });
     }
+    scores.set(site.entity, rows);
   }
+  return { tonight: parseDate(w.tonight), reference: w.reference, settings: w.settings, sites, scores };
+}
 
-  private async flush(hass: HomeAssistant): Promise<void> {
-    this.scheduled = false;
-    const batches = [...this.queue.values()];
-    this.queue.clear();
-    try {
-      const info = await hass.callWS!<{ api_version: number }>({ type: `${INTEGRATION_DOMAIN}/info` });
-      if (info.api_version !== API_VERSION) throw new Error(`unsupported integration API ${info.api_version}`);
-      let changed = false;
-      for (const batch of batches) {
-        const byDate = new Map(batch.map((r) => [dateKey(r.date), r]));
-        for (const run of contiguousRuns(batch.map((r) => r.date))) {
-          const first = byDate.get(dateKey(run[0]))!;
-          const res = await hass.callWS!<{ nights: WireNight[] }>({
-            type: `${INTEGRATION_DOMAIN}/nights`,
-            start: dateKey(run[0]),
-            days: run.length,
-            observer: first.observer,
-            bortle: first.bortle,
-            min_gc_altitude: first.minGcAltitude,
-            max_moon_illumination: first.maxMoonIllumination,
-            dome_sigma: first.domeSigma,
-            domes: first.domes,
-            step_minutes: 10,
-          });
-          for (const w of res.nights) {
-            const req = byDate.get(w.date);
-            if (req) {
-              this.results.set(req.key, nightFromWire(w));
-              changed = true;
-            }
-          }
-        }
-      }
-      if (changed) this.onChange();
-    } catch (err) {
-      console.warn("milky-way-planner-card: integration unavailable, using built-in calculations", err);
-      this.failedUntil = Date.now() + RETRY_AFTER_MS;
-      for (const batch of batches) for (const r of batch) this.requested.delete(r.key);
-    }
-  }
+export async function fetchOverview(hass: HomeAssistant): Promise<Overview> {
+  return overviewFromWire(await call<WireOverview>(hass, { type: "overview" }));
+}
+
+/** Nights at the centre of the sites (what the calendar draws), `days` from `start` (YYYY-MM-DD). */
+export async function fetchCalendar(hass: HomeAssistant, start: string, days: number): Promise<NightSummary[]> {
+  const res = await call<{ api_version: number; nights: WireNight[] }>(hass, { type: "calendar", start, days });
+  return res.nights.map(nightFromWire);
+}
+
+export async function fetchSkyHours(hass: HomeAssistant, entity: string, startMs: number, hours: number): Promise<SkyHour[]> {
+  const res = await call<{
+    api_version: number;
+    hours: { t: number; sun: number; moon: number; lm: number; alt: number; vis: boolean; dp: number }[];
+  }>(hass, { type: "sky_hours", entity, start: new Date(startMs).toISOString(), hours });
+  return res.hours.map((h) => ({
+    time: new Date(h.t),
+    sunAltitude: h.sun,
+    moonAltitude: h.moon,
+    limitingMagnitude: h.lm,
+    gcAltitude: h.alt,
+    gcVisible: h.vis,
+    domePenalty: h.dp,
+  }));
 }

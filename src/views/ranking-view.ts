@@ -1,11 +1,10 @@
 import { html, nothing, type TemplateResult } from "lit";
-import { formatDrive } from "../data/drive-time";
 import { compassPoint } from "../astro/light-domes";
 import { addDays, type CivilDate, solarNoon } from "../astro/time";
 import type { SortId } from "../types";
 import { scoreColorBand, type NightScore } from "../scoring/score";
 import { SCORE_COLORS, tiltGlyph } from "./colors";
-import type { ViewContext } from "./context";
+import { formatDrive, type ViewContext } from "./context";
 
 export interface RankingHandlers {
   selectedNight: number;
@@ -22,7 +21,7 @@ const SORTS: { id: SortId; label: string }[] = [
 ];
 
 export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateResult {
-  const dates: CivilDate[] = Array.from({ length: ctx.config.nights }, (_, i) => addDays(ctx.tonight, i));
+  const dates: CivilDate[] = Array.from({ length: ctx.settings.nights }, (_, i) => addDays(ctx.tonight, i));
   const selected = Math.min(h.selectedNight, dates.length - 1);
   const rows = ctx.sites.map((site) => ({ site, scores: dates.map((d) => ctx.score(site, d)) }));
   const byScore = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
@@ -43,7 +42,7 @@ export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateRes
   const nightLabel = (i: number) => (i === 0 ? "Tonight" : ctx.fmtDay(solarNoon(dates[i], ctx.hass.config.longitude)));
 
   if (ctx.sites.length === 0) {
-    return html`<div class="empty">Add AstroWeather sites in the card editor to rank them.</div>`;
+    return html`<div class="empty">No sites yet: add AstroWeather sites in the Milky Way Planner integration's settings.</div>`;
   }
 
   return html`
@@ -84,7 +83,7 @@ export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateRes
             <div class="rk-site">
               <div class="site-name">${site.name}</div>
               <div class="site-meta">
-                Bortle ${site.bortle}${site.drive_minutes
+                <span title=${site.bortle_estimated ? "Estimated from nearby towns; set it in the integration's site settings if you know it" : "Bortle class"}>Bortle ${site.bortle_estimated ? "~" : ""}${site.bortle}</span>${site.drive_minutes
                   ? html` · <span title=${site.drive_estimated ? "Estimated driving time from your Home Assistant location" : "Drive time"}>${site.drive_estimated ? "~" : ""}${formatDrive(site.drive_minutes)} drive</span>`
                   : nothing}
                 ${site.observer ? nothing : html`<span class="warn"> · no coordinates</span>`}
@@ -116,7 +115,7 @@ function renderCell(ctx: ViewContext, s: NightScore | null, label: string, onCli
   if (!s) return html`<div class="rk-cell muted"><span class="cell-night">${label}</span>—</div>`;
   const n = s.night;
   if (s.score === null) {
-    return html`<div class="rk-cell muted" title="Core not above ${ctx.config.min_gc_altitude}° while dark">
+    return html`<div class="rk-cell muted" title="Core not above ${ctx.settings.min_gc_altitude}° while dark">
       <span class="cell-night">${label}</span>no core
     </div>`;
   }

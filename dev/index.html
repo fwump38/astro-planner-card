@@ -28,41 +28,64 @@
 </head>
 <body>
   <div class="bar">
-    <strong>Dev harness</strong> (mocked <code>hass</code>; HA-only elements like ha-form aren't available here)
+    <strong>Dev harness</strong> (mocked <code>hass</code> and integration responses from <code>mock.json</code>; HA-only elements like ha-form aren't available here)
     <label><input type="checkbox" id="dark" /> dark</label>
   </div>
   <milky-way-planner-card id="card"></milky-way-planner-card>
   <script type="module">
-    import "../dist/milky-way-planner-card.js";
+    // Canned responses from the integration for a fixed "now", written by the integration repo's scripts/export_card_mock.py:
+    //   PYTHONPATH=. .venv/bin/python scripts/export_card_mock.py ../milky-way-planner-card/dev/mock.json
+    const mock = await (await fetch("./mock.json")).json();
 
-    // Test data only. Coordinates are NM-area examples; the real card learns them from AstroWeather sensors.
-    const SITES = {
-      home: { name: "Home", lat: 35.687, lon: -105.938, clear: 0.55 },
-      chaco: { name: "Chaco Canyon", lat: 36.06, lon: -107.96, clear: 0.9 },
-      abiquiu: { name: "Abiquiu", lat: 36.33, lon: -106.47, clear: 0.85 },
-      carrizozo: { name: "Valley of Fires", lat: 33.68, lon: -105.92, clear: 0.7 },
+    // Freeze the clock at the mock's "now" before the card loads.
+    const RealDate = Date;
+    const offset = new RealDate(mock.now).getTime() - RealDate.now();
+    globalThis.Date = class extends RealDate {
+      constructor(...args) {
+        if (args.length === 0) super(RealDate.now() + offset);
+        else super(...args);
+      }
+      static now() {
+        return RealDate.now() + offset;
+      }
     };
-    const DOMES = [
-      { name: "Albuquerque", latitude: 35.084, longitude: -106.651, population: 560000 },
-      { name: "Santa Fe", latitude: 35.687, longitude: -105.938, population: 89000 },
-      { name: "Rio Rancho", latitude: 35.233, longitude: -106.664, population: 104000 },
-      { name: "Farmington", latitude: 36.728, longitude: -108.219, population: 46000 },
-    ];
+    await import("../dist/milky-way-planner-card.js");
 
+    const sites = mock.overview.sites;
     const hass = {
       states: {},
       entities: {},
-      config: { latitude: 35.687, longitude: -105.938, elevation: 2100, time_zone: "America/Denver" },
+      config: { latitude: 35.687, longitude: -105.938, elevation: 2100, time_zone: "America/Denver", components: ["milky_way_planner"] },
       locale: { language: "en", time_format: "12" },
+      callWS: async (msg) => {
+        const type = msg.type.replace("milky_way_planner/", "");
+        if (type === "overview") return mock.overview;
+        if (type === "calendar") {
+          const start = new RealDate(msg.start + "T00:00:00Z");
+          const nights = [];
+          for (let i = 0; i < msg.days; i++) {
+            const key = new RealDate(start.getTime() + i * 86400e3).toISOString().slice(0, 10);
+            if (mock.calendar[key]) nights.push(mock.calendar[key]);
+          }
+          return { api_version: 2, nights };
+        }
+        if (type === "sky_hours") {
+          const sky = mock.sky[msg.entity];
+          const from = new RealDate(msg.start).getTime();
+          return { api_version: 2, hours: sky.hours.filter((h) => h.t >= from).slice(0, msg.hours) };
+        }
+        throw new Error(`unmocked ${msg.type}`);
+      },
       connection: {
         subscribeMessage(cb, msg) {
-          const site = SITES[msg.entity_id.replace("weather.astroweather_", "")];
+          const site = sites.find((s) => s.entity === msg.entity_id);
           const start = Math.floor(Date.now() / 3600e3) * 3600e3;
+          const clearBase = { chaco: 0.9, abiquiu: 0.85, carrizozo: 0.7 }[msg.entity_id.replace("weather.astroweather_", "")] ?? 0.55;
           const forecast = Array.from({ length: 48 }, (_, i) => {
-            const wave = 0.5 + 0.5 * Math.sin(i / 5 + site.lat);
-            const clear = Math.min(1, Math.max(0, site.clear * 0.6 + wave * 0.45));
+            const wave = 0.5 + 0.5 * Math.sin(i / 5 + site.latitude);
+            const clear = Math.min(1, Math.max(0, clearBase * 0.6 + wave * 0.45));
             return {
-              datetime: new Date(start + i * 3600e3).toISOString(),
+              datetime: new RealDate(start + i * 3600e3).toISOString(),
               cloudless_percentage: Math.round(clear * 100),
               cloudcover_percentage: Math.round((1 - clear) * 100),
               transparency_percentage: Math.round(55 + clear * 40),
@@ -78,27 +101,12 @@
         },
       },
     };
-    for (const [id, s] of Object.entries(SITES)) {
-      const e = `weather.astroweather_${id}`;
-      hass.states[e] = { entity_id: e, state: "sunny", attributes: { friendly_name: `AstroWeather ${s.name}` }, last_updated: new Date().toISOString() };
-      hass.states[`sensor.astroweather_${id}_latitude`] = { entity_id: `sensor.astroweather_${id}_latitude`, state: String(s.lat), attributes: {} };
-      hass.states[`sensor.astroweather_${id}_longitude`] = { entity_id: `sensor.astroweather_${id}_longitude`, state: String(s.lon), attributes: {} };
+    for (const s of sites) {
+      hass.states[s.entity] = { entity_id: s.entity, state: "sunny", attributes: {}, last_updated: new Date().toISOString() };
     }
 
     const card = document.getElementById("card");
-    card.setConfig({
-      type: "custom:milky-way-planner-card",
-      title: "Milky Way planner",
-      default_tab: new URLSearchParams(location.search).get("tab") ?? "ranking",
-      nights: 3,
-      sites: [
-        { entity: "weather.astroweather_home", name: "Home (baseline)", bortle: 5 },
-        { entity: "weather.astroweather_chaco", bortle: 1 },
-        { entity: "weather.astroweather_abiquiu", bortle: 3 },
-        { entity: "weather.astroweather_carrizozo", name: "Valley of Fires", bortle: 2, drive_minutes: 150 },
-      ],
-      light_domes: DOMES,
-    });
+    card.setConfig({ type: "custom:milky-way-planner-card", title: "Milky Way planner", default_tab: new URLSearchParams(location.search).get("tab") ?? "ranking" });
     card.hass = hass;
     const month = new URLSearchParams(location.search).get("month"); // e.g. 2027-05
     if (month) { const [y, m] = month.split("-").map(Number); card._calYear = y; card._calMonth = m; }
