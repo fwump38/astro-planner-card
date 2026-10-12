@@ -1,0 +1,40 @@
+{
+  "name": "milky-way-planner-card",
+  "version": "0.1.0",
+  "description": "Home Assistant Lovelace card: clear-sky charts, dark-site ranking and a Milky Way core calendar built on AstroWeather.",
+  "type": "module",
+  "main": "dist/milky-way-planner-card.js",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c --watch",
+    "dev": "rollup -c --watch --environment DEV",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "serve": "node dev/serve.mjs"
+  },
+  "keywords": [
+    "home-assistant",
+    "lovelace",
+    "hacs",
+    "astrophotography",
+    "milky-way",
+    "astroweather"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "astronomy-engine": "2.1.19",
+    "lit": "3.3.3"
+  },
+  "devDependencies": {
+    "@rollup/plugin-json": "6.1.0",
+    "@rollup/plugin-node-resolve": "16.0.3",
+    "@rollup/plugin-replace": "6.0.3",
+    "@rollup/plugin-terser": "1.0.0",
+    "@rollup/plugin-typescript": "12.3.0",
+    "rollup": "4.64.5",
+    "tslib": "2.8.1",
+    "typescript": "5.9.3",
+    "vitest": "5.0.4"
+  }
+}
