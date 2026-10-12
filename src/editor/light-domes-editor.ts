@@ -17,6 +17,8 @@ const SCHEMA = [
   { name: "location", required: true, selector: { location: { radius: false } } },
 ];
 
+const SOURCE_LABELS = { integration: "the Milky Way Planner integration", wikidata: "Wikidata" };
+
 const LABELS: Record<string, string> = { name: "City / town", population: "Population", location: "Location" };
 
 interface Row {
@@ -67,9 +69,9 @@ export class LightDomesEditor extends LitElement {
         const o = resolveSite(this.hass, s).observer;
         if (o) points.push(o);
       }
-      const found = await fetchNearbyDomes(points, this.radiusKm);
+      const { domes: found, source } = await fetchNearbyDomes(points, this.radiusKm, { hass: this.hass });
       const merged = mergeDomes(this.domes, found);
-      this._status = `Found ${found.length} places within ${this.radiusKm} km; ${merged.length - this.domes.length} added.`;
+      this._status = `Found ${found.length} places within ${this.radiusKm} km via ${SOURCE_LABELS[source]}; ${merged.length - this.domes.length} added.`;
       this._emit(merged);
     } catch (err) {
       this._error =
@@ -87,7 +89,9 @@ export class LightDomesEditor extends LitElement {
         <h3>Light domes</h3>
         <div class="hint">
           Cities whose glow can wash out the part of the sky you're pointing at. “Find nearby cities” looks up populated places around your
-          Home Assistant location and your sites using Wikidata, falling back to OpenStreetMap (one request; results are saved in this card's config).
+          Home Assistant location and your sites. It asks the Milky Way Planner integration if you have it (GeoNames data, with suburbs folded into
+          their metro area), otherwise Wikidata directly. Results are saved in this card's config. With no list here, the card uses the
+          integration's list when it has one.
         </div>
         <div class="toolbar" style="margin-bottom:8px">
           <ha-button ?disabled=${this._busy} @click=${this._find}>${this._busy ? "Searching…" : "Find nearby cities"}</ha-button>

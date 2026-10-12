@@ -6,11 +6,11 @@ import { addDays, type CivilDate, civilDateIn, dateKey, makeDayFormatter, makeHo
 import { resolveConfig } from "./data/defaults";
 import { EMPTY_FORECAST, type HourlyForecast, subscribeForecasts } from "./data/forecast";
 import { type DriveEstimate, getDriveTime } from "./data/drive-time";
-import { IntegrationNights } from "./data/integration";
+import { INTEGRATION_DOMAIN, IntegrationNights, integrationInstalled } from "./data/integration";
 import { findAstroWeatherEntities, homeObserver, resolveSite } from "./data/sites";
 import { scoreNight, type NightScore } from "./scoring/score";
 import { cardStyles } from "./styles";
-import type { CardConfig, HomeAssistant, Observer, ResolvedConfig, Site, SortId, TabId } from "./types";
+import type { CardConfig, HomeAssistant, LightDome, Observer, ResolvedConfig, Site, SortId, TabId } from "./types";
 import { renderCalendar } from "./views/calendar-view";
 import type { ViewContext } from "./views/context";
 import { renderRanking } from "./views/ranking-view";
@@ -77,6 +77,8 @@ export class MilkyWayPlannerCard extends LitElement {
     this._scoreCache.clear();
     this.requestUpdate();
   });
+  private _integrationDomes: LightDome[] = [];
+  private _domesRequested = false;
   private _hassSignature = "";
   private _driveTimes = new Map<string, DriveEstimate>();
   private _drivePending = new Set<string>();
@@ -93,8 +95,11 @@ export class MilkyWayPlannerCard extends LitElement {
     this._scoreCache.clear();
     this._domeCache.clear();
     this._integration.clear();
+    this._integrationDomes = [];
+    this._domesRequested = false;
     this._subscribedKey = "";
     this._ensureSubscriptions();
+    this._ensureIntegrationDomes();
   }
 
   set hass(hass: HomeAssistant) {
@@ -110,6 +115,7 @@ export class MilkyWayPlannerCard extends LitElement {
       this.requestUpdate();
     }
     this._ensureSubscriptions();
+    this._ensureIntegrationDomes();
   }
 
   get hass(): HomeAssistant | undefined {
@@ -130,6 +136,30 @@ export class MilkyWayPlannerCard extends LitElement {
     this._unsubscribe?.();
     this._unsubscribe = undefined;
     this._subscribedKey = "";
+  }
+
+  /** With no light domes in the card's own config, use the list stored in the integration (if installed). */
+  private _ensureIntegrationDomes(): void {
+    const hass = this._hass;
+    const cfg = this._config;
+    if (this._domesRequested || !hass || !cfg || cfg.light_domes.length > 0 || !cfg.use_integration || !integrationInstalled(hass)) return;
+    this._domesRequested = true;
+    hass
+      .callWS!<{ domes: LightDome[] }>({ type: `${INTEGRATION_DOMAIN}/light_domes` })
+      .then((res) => {
+        if (!res.domes?.length) return;
+        this._integrationDomes = res.domes;
+        this._nightCache.clear();
+        this._scoreCache.clear();
+        this._integration.clear();
+        this.requestUpdate();
+      })
+      .catch((err) => console.warn("milky-way-planner-card: couldn't read the integration's light domes", err));
+  }
+
+  /** The card's own list wins; otherwise the integration's. */
+  private _lightDomes(config: ResolvedConfig): LightDome[] {
+    return config.light_domes.length ? config.light_domes : this._integrationDomes;
   }
 
   private _ensureSubscriptions(): void {
@@ -214,7 +244,7 @@ export class MilkyWayPlannerCard extends LitElement {
       domeSigma: config.dome_sigma,
     });
     const optsKey = (site: Site) =>
-      `${site.entity}|${site.observer?.latitude},${site.observer?.longitude}|${site.bortle}|${site.entity === REFERENCE_ENTITY ? config.calendar_min_altitude : config.min_gc_altitude}|${config.max_moon_illumination}|${config.dome_sigma}|${config.light_domes.length}`;
+      `${site.entity}|${site.observer?.latitude},${site.observer?.longitude}|${site.bortle}|${site.entity === REFERENCE_ENTITY ? config.calendar_min_altitude : config.min_gc_altitude}|${config.max_moon_illumination}|${config.dome_sigma}|${this._lightDomes(config).length}`;
 
     const night = (site: Site, date: CivilDate): NightSummary | null => {
       if (!site.observer) return null;
@@ -232,7 +262,7 @@ export class MilkyWayPlannerCard extends LitElement {
           bortle: site.bortle,
           minGcAltitude: opts.minGcAltitude,
           maxMoonIllumination: opts.maxMoonIllumination,
-          domes: site.entity === REFERENCE_ENTITY ? [] : config.light_domes,
+          domes: site.entity === REFERENCE_ENTITY ? [] : this._lightDomes(config),
           domeSigma: opts.domeSigma,
         });
       }
@@ -275,10 +305,11 @@ export class MilkyWayPlannerCard extends LitElement {
 
   private _domes(site: Site, config: ResolvedConfig) {
     if (!site.observer || site.entity === REFERENCE_ENTITY) return [];
-    const key = `${site.observer.latitude},${site.observer.longitude}|${JSON.stringify(config.light_domes)}`;
+    const domes = this._lightDomes(config);
+    const key = `${site.observer.latitude},${site.observer.longitude}|${JSON.stringify(domes)}`;
     let g = this._domeCache.get(key);
     if (!g) {
-      g = domeGeometry(site.observer, config.light_domes);
+      g = domeGeometry(site.observer, domes);
       this._domeCache.set(key, g);
     }
     return g;

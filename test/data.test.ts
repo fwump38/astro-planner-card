@@ -2,28 +2,21 @@ import { describe, expect, it } from "vitest";
 import { computeNight } from "../src/astro/night";
 import { domeGeometry } from "../src/astro/light-domes";
 import { forecastAt, toHourlyForecast } from "../src/data/forecast";
-import { domesFromOverpass, domesFromPlaces, mergeDomes, parsePopulation, type OverpassElement } from "../src/data/nearby-cities";
+import { domesFromPlaces, mergeDomes, placesFromSparql, type SparqlResults } from "../src/data/nearby-cities";
 import { DEFAULT_WEIGHTS } from "../src/data/defaults";
 import { classifyNight, hourQuality, scoreNight } from "../src/scoring/score";
 import type { AstroForecastHour, Site } from "../src/types";
-import overpass from "./fixtures/overpass.json";
+import wikidata from "./fixtures/wikidata.json";
 import realForecast from "./fixtures/astroweather-forecast.json";
 import { ABIQUIU, CHACO, TEST_DOMES } from "./fixtures/places";
 
 describe("nearby cities", () => {
-  it("parses populations with separators", () => {
-    expect(parsePopulation("564,559")).toBe(564559);
-    expect(parsePopulation("10 000")).toBe(10000);
-    expect(parsePopulation(undefined)).toBeNaN();
-  });
-
   it("keeps big-or-close places and drops small far ones", () => {
-    const domes = domesFromOverpass(overpass.elements as OverpassElement[], [ABIQUIU, CHACO], 250);
+    const domes = domesFromPlaces(placesFromSparql(wikidata as SparqlResults), [ABIQUIU, CHACO], 250);
     const names = domes.map((d) => d.name);
     expect(names).toContain("Albuquerque");
     expect(names).toContain("Española"); // small but close to Abiquiu
-    expect(names).not.toContain("Tinytown"); // small and far from every site
-    expect(names).not.toContain("No Population");
+    expect(names).not.toContain("Radium Springs"); // small and far from every site
     expect(names[0]).toBe("Albuquerque");
   });
 

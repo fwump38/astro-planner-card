@@ -1,24 +1,13 @@
 import { distanceKm, glowIndex } from "../astro/light-domes";
-import type { LightDome, Observer } from "../types";
+import type { HomeAssistant, LightDome, Observer } from "../types";
+import { INTEGRATION_DOMAIN, integrationInstalled } from "./integration";
 
-export type SourceKind = "wikidata" | "overpass";
-export interface CitySource {
-  kind: SourceKind;
-  url: string;
-}
-
-/**
- * Where to look for populated places, tried in order. Wikidata (run by the Wikimedia Foundation) is dependable and open to browser
- * requests. The community-run Overpass servers are fallbacks; they are frequently overloaded or reject requests.
- */
-export const CITY_SOURCES: CitySource[] = [
-  { kind: "wikidata", url: "https://query.wikidata.org/sparql" },
-  { kind: "overpass", url: "https://overpass-api.de/api/interpreter" },
-  { kind: "overpass", url: "https://overpass.kumi.systems/api/interpreter" },
-  { kind: "overpass", url: "https://overpass.private.coffee/api/interpreter" },
-  { kind: "overpass", url: "https://maps.mail.ru/osm/tools/overpass/api/interpreter" },
-];
+/** Where the card's own Wikidata lookup goes. The integration, when installed, is asked first (it uses GeoNames, which browsers can't fetch). */
+export const WIKIDATA_URL = "https://query.wikidata.org/sparql";
+export type CitySource = "integration" | "wikidata";
 export const REQUEST_TIMEOUT_MS = 20000;
+/** The integration may need to download the GeoNames file on its first lookup. */
+export const INTEGRATION_TIMEOUT_MS = 180000;
 /** Places whose glow index at every site is below this are too small/far to matter. */
 export const GLOW_CUTOFF = 0.005;
 /** Strongest light sources kept for each site, and an overall cap on the list. */
@@ -31,14 +20,6 @@ export interface Place {
   latitude: number;
   longitude: number;
   population: number;
-}
-
-export interface OverpassElement {
-  type: string;
-  lat?: number;
-  lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: Record<string, string>;
 }
 
 export interface SparqlResults {
@@ -60,11 +41,6 @@ export function boundingBox(points: Observer[], radiusKm: number): [number, numb
     east = Math.max(east, p.longitude + dLon);
   }
   return [Math.max(-90, south), Math.max(-180, west), Math.min(90, north), Math.min(180, east)];
-}
-
-export function overpassQuery(bbox: [number, number, number, number]): string {
-  const b = bbox.map((v) => v.toFixed(3)).join(",");
-  return `[out:json][timeout:20];node["place"~"^(city|town)$"]["population"](${b});out body qt;`;
 }
 
 /**
@@ -90,29 +66,10 @@ ORDER BY DESC(?pop)
 LIMIT 400`;
 }
 
-export function parsePopulation(raw: string | undefined): number {
-  if (!raw) return NaN;
-  const n = Number.parseInt(raw.replace(/[\s,.'_]/g, ""), 10);
-  return Number.isFinite(n) ? n : NaN;
-}
-
 /** WKT "Point(lon lat)" → coordinates. */
 export function parseWktPoint(wkt: string | undefined): { latitude: number; longitude: number } | null {
   const m = /^Point\(\s*(-?[\d.]+(?:e-?\d+)?)\s+(-?[\d.]+(?:e-?\d+)?)\s*\)$/i.exec(wkt ?? "");
   return m ? { longitude: Number(m[1]), latitude: Number(m[2]) } : null;
-}
-
-export function placesFromOverpass(elements: OverpassElement[]): Place[] {
-  const places: Place[] = [];
-  for (const el of elements) {
-    const latitude = el.lat ?? el.center?.lat;
-    const longitude = el.lon ?? el.center?.lon;
-    const population = parsePopulation(el.tags?.population);
-    const name = el.tags?.name;
-    if (latitude === undefined || longitude === undefined || !name || !(population > 0)) continue;
-    places.push({ name, latitude, longitude, population });
-  }
-  return places;
 }
 
 export function placesFromSparql(json: SparqlResults): Place[] {
@@ -156,14 +113,9 @@ export function domesFromPlaces(places: Place[], points: Observer[], radiusKm: n
     .map(([, dome]) => dome);
 }
 
-/** Turn Overpass elements into light domes that matter for at least one of `points`. */
-export function domesFromOverpass(elements: OverpassElement[], points: Observer[], radiusKm: number): LightDome[] {
-  return domesFromPlaces(placesFromOverpass(elements), points, radiusKm);
-}
-
 export class CityLookupError extends Error {
   constructor(public failures: string[]) {
-    super(`all ${failures.length} city data sources failed: ${failures.join("; ")}`);
+    super(`all city data sources failed: ${failures.join("; ")}`);
     this.name = "CityLookupError";
   }
 }
@@ -178,23 +130,7 @@ async function withTimeout<T>(timeoutMs: number, run: (signal: AbortSignal) => P
   }
 }
 
-async function queryOverpass(url: string, bbox: [number, number, number, number], fetchImpl: typeof fetch, timeoutMs: number): Promise<Place[]> {
-  return withTimeout(timeoutMs, async (signal) => {
-    const res = await fetchImpl(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(overpassQuery(bbox))}`,
-      signal,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = (await res.json()) as { elements?: OverpassElement[]; remark?: string };
-    // Overpass reports a server-side timeout as HTTP 200 with an empty result and a remark.
-    if (!json.elements?.length && json.remark) throw new Error(json.remark.slice(0, 80));
-    return placesFromOverpass(json.elements ?? []);
-  });
-}
-
-async function queryWikidata(url: string, bbox: [number, number, number, number], fetchImpl: typeof fetch, timeoutMs: number): Promise<Place[]> {
+async function queryWikidata(bbox: [number, number, number, number], fetchImpl: typeof fetch, timeoutMs: number, url: string): Promise<Place[]> {
   return withTimeout(timeoutMs, async (signal) => {
     // A plain GET with only safelisted headers stays a "simple" CORS request (no preflight).
     const res = await fetchImpl(`${url}?format=json&query=${encodeURIComponent(wikidataQuery(bbox))}`, {
@@ -206,35 +142,71 @@ async function queryWikidata(url: string, bbox: [number, number, number, number]
   });
 }
 
-function describeFailure(url: string, err: unknown): string {
-  const host = new URL(url).hostname;
-  const e = err as Error;
-  if (e?.name === "AbortError") return `${host}: timed out`;
-  if (e instanceof TypeError) return `${host}: network error (blocked, offline or overloaded)`;
-  return `${host}: ${e?.message ?? e}`;
+interface IntegrationDomes {
+  source: string;
+  domes: LightDome[];
 }
 
-/** Looks up populated places near `points`, falling through the sources until one answers. */
-export async function fetchNearbyDomes(
-  points: Observer[],
-  radiusKm: number,
-  fetchImpl: typeof fetch = fetch,
-  sources: CitySource[] = CITY_SOURCES,
-  timeoutMs: number = REQUEST_TIMEOUT_MS,
-): Promise<LightDome[]> {
-  if (points.length === 0) return [];
-  const bbox = boundingBox(points, radiusKm);
+/** The integration does the lookup server-side (GeoNames, then Wikidata) and folds suburbs into metro areas. */
+async function queryIntegration(hass: HomeAssistant, points: Observer[], radiusKm: number, timeoutMs: number): Promise<IntegrationDomes> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error("timed out"), { name: "AbortError" })), timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      hass.callWS!<IntegrationDomes>({
+        type: `${INTEGRATION_DOMAIN}/find_light_domes`,
+        points: points.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
+        radius_km: radiusKm,
+      }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function describeFailure(label: string, err: unknown): string {
+  const e = err as { name?: string; message?: string };
+  if (e?.name === "AbortError") return `${label}: timed out`;
+  if (err instanceof TypeError) return `${label}: network error (blocked, offline or overloaded)`;
+  return `${label}: ${e?.message ?? String(err)}`;
+}
+
+export interface NearbyOptions {
+  /** When the Milky Way Planner integration is installed, it is asked first. */
+  hass?: HomeAssistant;
+  fetchImpl?: typeof fetch;
+  wikidataUrl?: string;
+  timeoutMs?: number;
+  integrationTimeoutMs?: number;
+}
+
+export interface NearbyResult {
+  domes: LightDome[];
+  source: CitySource;
+}
+
+/** Looks up populated places near `points`: the integration first (if installed), then Wikidata directly. */
+export async function fetchNearbyDomes(points: Observer[], radiusKm: number, opts: NearbyOptions = {}): Promise<NearbyResult> {
+  if (points.length === 0) return { domes: [], source: "wikidata" };
+  const { hass, fetchImpl = fetch, wikidataUrl = WIKIDATA_URL, timeoutMs = REQUEST_TIMEOUT_MS, integrationTimeoutMs = INTEGRATION_TIMEOUT_MS } = opts;
   const failures: string[] = [];
-  for (const source of sources) {
+
+  if (hass && integrationInstalled(hass)) {
     try {
-      const places =
-        source.kind === "wikidata"
-          ? await queryWikidata(source.url, bbox, fetchImpl, timeoutMs)
-          : await queryOverpass(source.url, bbox, fetchImpl, timeoutMs);
-      return domesFromPlaces(places, points, radiusKm);
+      const res = await queryIntegration(hass, points, radiusKm, integrationTimeoutMs);
+      return { domes: res.domes, source: "integration" };
     } catch (err) {
-      failures.push(describeFailure(source.url, err));
+      failures.push(describeFailure("Milky Way Planner integration", err));
     }
+  }
+  try {
+    const places = await queryWikidata(boundingBox(points, radiusKm), fetchImpl, timeoutMs, wikidataUrl);
+    return { domes: domesFromPlaces(places, points, radiusKm), source: "wikidata" };
+  } catch (err) {
+    failures.push(describeFailure(new URL(wikidataUrl).hostname, err));
   }
   throw new CityLookupError(failures);
 }
