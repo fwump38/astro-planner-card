@@ -13,6 +13,14 @@ the [AstroWeather](https://github.com/mawinkler/astroweather) integration for fo
 
 Everything is configurable from the card's visual editor.
 
+| Tonight | Sky chart |
+|---|---|
+| ![Ranking of sites for tonight and the next nights](docs/ranking.png) | ![Hourly sky chart for one site](docs/chart.png) |
+
+![Milky Way calendar for a month](docs/calendar.png)
+
+*Screenshots use simulated forecast data from the development harness.*
+
 ## Requirements
 
 - Home Assistant 2024.4 or newer
