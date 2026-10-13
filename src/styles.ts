@@ -234,7 +234,7 @@ export const cardStyles = css`
     vertical-align: -2px;
   }
 
-  /* Narrow cards: each site becomes a block, nights sit side by side beneath its name. */
+  /* Narrow cards, or many forecast days: each site becomes a block, nights sit side by side beneath its name. */
   @container (max-width: 560px) {
     .rk-headrow {
       grid-template-columns: minmax(0, 1fr);
@@ -266,6 +266,37 @@ export const cardStyles = css`
     .rk-cell {
       min-height: 0;
     }
+  }
+  /* More days than fit in a row at any width */
+  .ranking.stacked .rk-headrow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ranking.stacked .rk-headrow .rk-site {
+    display: none;
+  }
+  .ranking.stacked .rk-row {
+    background: rgba(127, 127, 127, 0.05);
+    border-radius: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 6px;
+  }
+  .ranking.stacked .rk-nights {
+    gap: 6px;
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  }
+  .ranking.stacked .rk-headrow .rk-nights {
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  }
+  .ranking.stacked .cell-night {
+    display: block;
+  }
+  .ranking.stacked .cell-main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ranking.stacked .rk-cell {
+    min-height: 0;
   }
 
   /* Sky chart */

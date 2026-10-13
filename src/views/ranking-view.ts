@@ -7,6 +7,8 @@ import { SCORE_COLORS, tiltGlyph } from "./colors";
 import { formatDrive, type ViewContext } from "./context";
 
 export interface RankingHandlers {
+  /** Nights to show, tonight included; capped at what the integration scores. */
+  days: number;
   selectedNight: number;
   sort: SortId;
   onSort(sort: SortId): void;
@@ -21,7 +23,7 @@ const SORTS: { id: SortId; label: string }[] = [
 ];
 
 export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateResult {
-  const dates: CivilDate[] = Array.from({ length: ctx.settings.nights }, (_, i) => addDays(ctx.tonight, i));
+  const dates: CivilDate[] = Array.from({ length: Math.max(1, Math.min(h.days, ctx.settings.nights)) }, (_, i) => addDays(ctx.tonight, i));
   const selected = Math.min(h.selectedNight, dates.length - 1);
   const rows = ctx.sites.map((site) => ({ site, scores: dates.map((d) => ctx.score(site, d)) }));
   const byScore = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
@@ -62,7 +64,7 @@ export function renderRanking(ctx: ViewContext, h: RankingHandlers): TemplateRes
         </button>`,
       )}
     </div>
-    <div class="ranking">
+    <div class="ranking ${dates.length > 4 ? "stacked" : ""}">
       <div class="rk-headrow">
         <div class="rk-head rk-site">Site</div>
         <div class="rk-nights" style="--nights:${dates.length}">

@@ -1,6 +1,6 @@
 {
   "name": "milky-way-planner-card",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Home Assistant Lovelace card: clear-sky charts, dark-site ranking and a Milky Way core calendar built on AstroWeather.",
   "type": "module",
   "main": "dist/milky-way-planner-card.js",

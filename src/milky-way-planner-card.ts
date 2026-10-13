@@ -292,6 +292,7 @@ export class MilkyWayPlannerCard extends LitElement {
       ${this._tab === "ranking"
         ? renderRanking(ctx, {
             selectedNight: this._selectedNight,
+            days: this._config.forecast_days,
             sort: this._sort,
             onSort: (s) => (this._sort = s),
             onSelectNight: (i) => (this._selectedNight = i),

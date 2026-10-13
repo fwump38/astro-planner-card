@@ -56,6 +56,8 @@ export interface CardConfig {
   tabs?: TabId[];
   /** Initial sort for the Tonight view. */
   default_sort?: SortId;
+  /** Nights to show on the Tonight view, counting tonight as 1 (default 3; capped at the integration's number of nights). */
+  forecast_days?: number;
   /** Show only these sites (AstroWeather entity ids). Defaults to every site in the integration. */
   sites?: (string | { entity: string })[];
   /** Colour calendar days pink/blue/dark by how good the core window is. */
@@ -66,6 +68,7 @@ export interface ResolvedConfig extends CardConfig {
   default_tab: TabId;
   tabs: TabId[];
   default_sort: SortId;
+  forecast_days: number;
   /** Entity ids to show; empty = all of the integration's sites. */
   site_filter: string[];
   calendar_highlight: boolean;

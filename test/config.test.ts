@@ -15,6 +15,12 @@ describe("tabs config", () => {
     const r = resolveConfig({ type: "x", tabs: ["chart", "calendar"], default_tab: "ranking" });
     expect(r.default_tab).toBe("chart");
   });
+  it("defaults forecast_days to 3 and floors invalid values to at least 1", () => {
+    expect(resolveConfig({ type: "x" }).forecast_days).toBe(3);
+    expect(resolveConfig({ type: "x", forecast_days: 5 }).forecast_days).toBe(5);
+    expect(resolveConfig({ type: "x", forecast_days: 0 }).forecast_days).toBe(3);
+    expect(resolveConfig({ type: "x", forecast_days: 2.7 }).forecast_days).toBe(2);
+  });
   it("defaults sort to score", () => {
     expect(resolveConfig({ type: "x" }).default_sort).toBe("score");
   });

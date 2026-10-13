@@ -33,6 +33,7 @@ const SCHEMA = [
       { name: "default_tab", selector: { select: { mode: "dropdown", options: TAB_OPTIONS } } },
     ],
   },
+  { name: "forecast_days", selector: { number: { min: 1, max: 14, step: 1, mode: "box" } } },
   { name: "calendar_highlight", selector: { boolean: {} } },
   { name: "sites", selector: { entity: { multiple: true, domain: "weather", integration: "astroweather" } } },
 ];
@@ -42,6 +43,7 @@ const LABELS: Record<string, string> = {
   tabs: "Tabs to show",
   default_tab: "Starting tab",
   default_sort: "Tonight: sort sites by",
+  forecast_days: "Tonight: days to show (tonight counts as 1)",
   calendar_highlight: "Colour calendar days pink / blue / dark by core window",
   sites: "Only show these sites (leave empty to show all)",
 };
@@ -69,6 +71,7 @@ export class MilkyWayPlannerCardEditor extends LitElement {
       tabs: r.tabs,
       default_tab: r.default_tab,
       default_sort: r.default_sort,
+      forecast_days: r.forecast_days,
       calendar_highlight: r.calendar_highlight,
       sites: r.site_filter,
     };

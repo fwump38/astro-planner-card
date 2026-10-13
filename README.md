@@ -68,6 +68,7 @@ default_tab: ranking
 | `tabs` | all | Tabs to show, in order: any of `ranking`, `chart`, `calendar`. With one tab the tab bar is hidden |
 | `default_tab` | `ranking` | `ranking`, `chart` or `calendar` (falls back to the first enabled tab) |
 | `default_sort` | `score` | Initial sort on the Tonight view: `score`, `distance` (drive time, shortest first) or `bortle` (darkest first). Also switchable with the chips above the list; ties fall back to score |
+| `forecast_days` | `3` | Nights shown on the Tonight view, counting tonight as 1. Capped at the number of nights the integration scores |
 | `sites` | all of the integration's sites | List of AstroWeather entity ids to show (e.g. for a dashboard about one region) |
 | `calendar_highlight` | `true` | Colour calendar days: pink = best, blue = short window, dark = core not visible |
 
