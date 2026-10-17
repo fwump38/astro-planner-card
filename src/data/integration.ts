@@ -4,14 +4,15 @@ import type { DomeGeometry } from "../astro/light-domes";
 import type { CivilDate } from "../astro/time";
 import type { NightScore } from "../scoring/score";
 import type { HomeAssistant, Observer, PlannerSettings, Site } from "../types";
+import type { DarkNight, ShowerOutlook, Target, TargetKind, TargetNight, TargetsResult } from "./targets";
 
 /**
- * The Milky Way Planner integration (https://github.com/fwump38/milky-way-planner) does all the astronomy and scoring;
+ * The Astro Planner integration (https://github.com/fwump38/astro-planner) does all the astronomy and scoring;
  * this card only asks it for the results and draws them.
  */
-export const INTEGRATION_DOMAIN = "milky_way_planner";
-export const INTEGRATION_URL = "https://github.com/fwump38/milky-way-planner";
-const API_VERSION = 2;
+export const INTEGRATION_DOMAIN = "astro_planner";
+export const INTEGRATION_URL = "https://github.com/fwump38/astro-planner";
+const API_VERSION = 3;
 
 interface WireSample {
   t: number;
@@ -114,6 +115,9 @@ interface WireSite {
 interface WireScore {
   date: string;
   score: number | null;
+  milky_way: boolean;
+  sky: number;
+  targets: { id: string; label: string; kind: string; score: number; minutes: number; peak_altitude: number; direction: string | null }[];
   astro_only: boolean;
   weather: number | null;
   cloud: number | null;
@@ -158,7 +162,7 @@ export function integrationInstalled(hass: HomeAssistant): boolean {
 async function call<T extends { api_version: number }>(hass: HomeAssistant, msg: Record<string, unknown>): Promise<T> {
   const res = await hass.callWS!<T>({ ...msg, type: `${INTEGRATION_DOMAIN}/${msg.type}` });
   if (res.api_version !== API_VERSION) {
-    throw new Error(`The Milky Way Planner integration speaks API ${res.api_version}; this card needs ${API_VERSION}. Update both from HACS.`);
+    throw new Error(`The Astro Planner integration speaks API ${res.api_version}; this card needs ${API_VERSION}. Update both from HACS.`);
   }
   return res;
 }
@@ -182,7 +186,18 @@ export function overviewFromWire(w: WireOverview): Overview {
   for (const site of sites) {
     const rows = new Map<string, NightScore>();
     for (const r of w.scores[site.entity] ?? []) {
-      rows.set(r.date, { site, night: nightFromWire(r.night), score: r.score, astroOnly: r.astro_only, weather: r.weather, cloud: r.cloud, domeWarning: r.dome_warning });
+      rows.set(r.date, {
+        site,
+        night: nightFromWire(r.night),
+        score: r.score,
+        milkyWay: r.milky_way,
+        sky: r.sky,
+        targets: (r.targets ?? []).map((t) => ({ id: t.id, label: t.label, kind: t.kind, score: t.score, minutes: t.minutes, peakAltitude: t.peak_altitude, direction: t.direction })),
+        astroOnly: r.astro_only,
+        weather: r.weather,
+        cloud: r.cloud,
+        domeWarning: r.dome_warning,
+      });
     }
     scores.set(site.entity, rows);
   }
@@ -212,5 +227,99 @@ export async function fetchSkyHours(hass: HomeAssistant, entity: string, startMs
     gcAltitude: h.alt,
     gcVisible: h.vis,
     domePenalty: h.dp,
+  }));
+}
+
+interface WireTargetNight {
+  date: string;
+  minutes: number;
+  peak_altitude: number;
+  peak_time: string | null;
+  direction: string | null;
+  start: string | null;
+  end: string | null;
+  moon_penalty: number;
+  moon_separation: number | null;
+}
+
+interface WireTarget {
+  id: string;
+  designation: string;
+  name: string;
+  label: string;
+  kind: TargetKind;
+  kind_label: string;
+  magnitude: number | null;
+  size: number | null;
+  constellation: string | null;
+  best_date: string | null;
+  framing: Target["framing"];
+  nights: WireTargetNight[];
+}
+
+interface WireTargets {
+  api_version: number;
+  settings: { min_altitude: number; max_magnitude: number; fov_arcmin: number };
+  dark: { date: string; dusk: string | null; dawn: string | null; dark_minutes: number; moon_free_minutes: number; moon_illumination: number }[];
+  targets: WireTarget[];
+}
+
+const targetNightFromWire = (n: WireTargetNight): TargetNight => ({
+  date: n.date,
+  minutes: n.minutes,
+  peakAltitude: n.peak_altitude,
+  peakTime: toDate(n.peak_time),
+  direction: n.direction,
+  start: toDate(n.start),
+  end: toDate(n.end),
+  moonPenalty: n.moon_penalty,
+  moonSeparation: n.moon_separation,
+});
+
+export function targetsFromWire(w: WireTargets): TargetsResult {
+  const d = w.dark[0];
+  const dark: DarkNight | null = d
+    ? { date: d.date, dusk: toDate(d.dusk), dawn: toDate(d.dawn), darkMinutes: d.dark_minutes, moonFreeMinutes: d.moon_free_minutes, moonIllumination: d.moon_illumination }
+    : null;
+  const targets: Target[] = w.targets
+    .filter((t) => t.nights.length > 0)
+    .map((t) => ({
+      id: t.id,
+      designation: t.designation,
+      name: t.name,
+      label: t.label,
+      kind: t.kind,
+      kindLabel: t.kind_label,
+      magnitude: t.magnitude,
+      size: t.size,
+      constellation: t.constellation,
+      bestDate: t.best_date,
+      framing: t.framing,
+      night: targetNightFromWire(t.nights[0]),
+    }));
+  return { settings: { minAltitude: w.settings.min_altitude, maxMagnitude: w.settings.max_magnitude, fovArcmin: w.settings.fov_arcmin }, dark, targets };
+}
+
+/** Targets that are up in the dark at the Home Assistant location on the night starting `start` (YYYY-MM-DD). */
+export async function fetchTargets(hass: HomeAssistant, start: string): Promise<TargetsResult> {
+  return targetsFromWire(await call<WireTargets>(hass, { type: "targets", start, days: 1 }));
+}
+
+export async function fetchShowers(hass: HomeAssistant, count = 3): Promise<ShowerOutlook[]> {
+  const res = await call<{
+    api_version: number;
+    showers: { id: string; name: string; peak: string; days_until: number; active: boolean; zhr: number; radiant_peak_altitude: number; moon_illumination: number; moon_free_minutes: number; rating: number }[];
+  }>(hass, { type: "showers", count });
+  return res.showers.map((s) => ({
+    id: s.id,
+    name: s.name,
+    peak: s.peak,
+    daysUntil: s.days_until,
+    active: s.active,
+    zhr: s.zhr,
+    radiantPeakAltitude: s.radiant_peak_altitude,
+    moonIllumination: s.moon_illumination,
+    moonFreeMinutes: s.moon_free_minutes,
+    rating: s.rating,
   }));
 }

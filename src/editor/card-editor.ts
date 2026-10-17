@@ -8,6 +8,7 @@ const TAB_OPTIONS = [
   { value: "ranking", label: "Tonight / ranking" },
   { value: "chart", label: "Sky chart" },
   { value: "calendar", label: "Calendar" },
+  { value: "targets", label: "Targets (Messier, planets, meteor showers)" },
 ];
 
 const SCHEMA = [
@@ -48,7 +49,7 @@ const LABELS: Record<string, string> = {
   sites: "Only show these sites (leave empty to show all)",
 };
 
-export class MilkyWayPlannerCardEditor extends LitElement {
+export class AstroPlannerCardEditor extends LitElement {
   static styles = editorStyles;
 
   @property({ attribute: false }) hass?: HomeAssistant;
@@ -96,11 +97,11 @@ export class MilkyWayPlannerCardEditor extends LitElement {
         @value-changed=${this._onForm}
       ></ha-form>
       <div class="hint">
-        Sites, Bortle classes, drive times, light domes, score weights and sky thresholds are set in the Milky Way Planner integration
-        (Settings → Devices &amp; services → Milky Way Planner → Configure).
+        Sites, Bortle classes, drive times, light domes, score weights and sky thresholds are set in the Astro Planner integration
+        (Settings → Devices &amp; services → Astro Planner → Configure).
       </div>
     `;
   }
 }
 
-if (!customElements.get("milky-way-planner-card-editor")) customElements.define("milky-way-planner-card-editor", MilkyWayPlannerCardEditor);
+if (!customElements.get("astro-planner-card-editor")) customElements.define("astro-planner-card-editor", AstroPlannerCardEditor);

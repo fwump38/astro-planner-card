@@ -1,21 +1,23 @@
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import type { NightSummary } from "./astro/night";
-import { dateKey, daysInMonth, makeDayFormatter, makeHourFormatter, makeTimeFormatter } from "./astro/time";
+import { addDays, dateKey, daysInMonth, makeDayFormatter, makeHourFormatter, makeTimeFormatter } from "./astro/time";
 import { resolveConfig } from "./data/defaults";
 import { EMPTY_FORECAST, type HourlyForecast, subscribeForecasts } from "./data/forecast";
-import { fetchCalendar, fetchOverview, fetchSkyHours, INTEGRATION_URL, integrationInstalled, type Overview, type SkyHour } from "./data/integration";
-import { cardStyles } from "./styles";
+import { fetchCalendar, fetchOverview, fetchShowers, fetchSkyHours, fetchTargets, INTEGRATION_URL, integrationInstalled, type Overview, type SkyHour } from "./data/integration";
+import type { ShowerOutlook, TargetGroup, TargetsResult, TargetSort } from "./data/targets";
+import { cardStyles, targetStyles } from "./styles";
 import type { CardConfig, HomeAssistant, ResolvedConfig, Site, SortId, TabId } from "./types";
 import { renderCalendar } from "./views/calendar-view";
 import type { ViewContext } from "./views/context";
 import { renderRanking } from "./views/ranking-view";
 import { renderSkyChart } from "./views/sky-chart-view";
+import { renderTargets } from "./views/targets-view";
 import "./editor/card-editor";
 
 declare const __CARD_VERSION__: string;
 console.info(
-  `%c MILKY-WAY-PLANNER-CARD %c v${__CARD_VERSION__} `,
+  `%c ASTRO-PLANNER-CARD %c v${__CARD_VERSION__} `,
   "color:#fff;background:#3a2a6e;font-weight:700",
   "color:#3a2a6e;background:#e8d9ff",
 );
@@ -31,13 +33,14 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "ranking", label: "Tonight", icon: "mdi:format-list-numbered" },
   { id: "chart", label: "Sky chart", icon: "mdi:chart-timeline" },
   { id: "calendar", label: "Calendar", icon: "mdi:calendar-month" },
+  { id: "targets", label: "Targets", icon: "mdi:telescope" },
 ];
 
-export class MilkyWayPlannerCard extends LitElement {
-  static styles = [cardStyles, css``];
+export class AstroPlannerCard extends LitElement {
+  static styles = [cardStyles, targetStyles, css``];
 
   static getConfigElement(): HTMLElement {
-    return document.createElement("milky-way-planner-card-editor");
+    return document.createElement("astro-planner-card-editor");
   }
 
   static getStubConfig(): Partial<CardConfig> {
@@ -51,6 +54,11 @@ export class MilkyWayPlannerCard extends LitElement {
   @state() private _calYear = 0;
   @state() private _calMonth = 0;
   @state() private _error = "";
+  @state() private _targetOffset = 0;
+  @state() private _targetGroup: TargetGroup = "all";
+  @state() private _targetSort: TargetSort = "placement";
+  @state() private _framingOnly = false;
+  @state() private _showAll = false;
 
   private _config?: ResolvedConfig;
   private _hass?: HomeAssistant;
@@ -67,9 +75,13 @@ export class MilkyWayPlannerCard extends LitElement {
   private _sky = new Map<string, SkyHour[]>();
   private _skyRequested = new Set<string>();
   private _hassSignature = "";
+  private _targets = new Map<string, TargetsResult>();
+  private _targetsRequested = new Set<string>();
+  private _showers?: ShowerOutlook[];
+  private _showersRequested = false;
 
   setConfig(config: CardConfig): void {
-    if (!config) throw new Error("milky-way-planner-card: missing configuration");
+    if (!config) throw new Error("astro-planner-card: missing configuration");
     this._config = resolveConfig(config);
     this._tab = this._config.default_tab;
     this._sort = this._config.default_sort;
@@ -128,6 +140,10 @@ export class MilkyWayPlannerCard extends LitElement {
           this._calendarRequested.clear();
           this._sky.clear();
           this._skyRequested.clear();
+          this._targets.clear();
+          this._targetsRequested.clear();
+          this._showers = undefined;
+          this._showersRequested = false;
         }
         this._overview = overview;
         this._error = "";
@@ -140,7 +156,7 @@ export class MilkyWayPlannerCard extends LitElement {
       .catch((err) => {
         this._error = errorText(err);
         this._retryAt = Date.now() + RETRY_MS;
-        console.warn("milky-way-planner-card: couldn't read the integration", err);
+        console.warn("astro-planner-card: couldn't read the integration", err);
       })
       .finally(() => {
         this._loading = false;
@@ -189,6 +205,33 @@ export class MilkyWayPlannerCard extends LitElement {
         this._error = errorText(err);
         setTimeout(() => this._calendarRequested.delete(key), RETRY_MS);
       });
+  }
+
+  /** Load the targets up on a night once, plus the meteor showers. */
+  private _ensureTargets(key: string): void {
+    const hass = this._hass;
+    if (!hass || !this._overview) return;
+    if (!this._targetsRequested.has(key)) {
+      this._targetsRequested.add(key);
+      fetchTargets(hass, key)
+        .then((res) => {
+          this._targets.set(key, res);
+          this.requestUpdate();
+        })
+        .catch((err) => {
+          this._error = errorText(err);
+          setTimeout(() => this._targetsRequested.delete(key), RETRY_MS);
+        });
+    }
+    if (!this._showersRequested) {
+      this._showersRequested = true;
+      fetchShowers(hass, 3)
+        .then((res) => {
+          this._showers = res;
+          this.requestUpdate();
+        })
+        .catch(() => setTimeout(() => (this._showersRequested = false), RETRY_MS));
+    }
   }
 
   private _skyHours(entity: string, from: number, hours: number): SkyHour[] | undefined {
@@ -250,7 +293,7 @@ export class MilkyWayPlannerCard extends LitElement {
     if (!integrationInstalled(this._hass)) {
       return html`<ha-card>
         <div class="empty">
-          This card needs the <a href=${INTEGRATION_URL} target="_blank" rel="noreferrer">Milky Way Planner integration</a>, which
+          This card needs the <a href=${INTEGRATION_URL} target="_blank" rel="noreferrer">Astro Planner integration</a>, which
           does the astronomy and scoring. Install it from HACS, then add it under Settings → Devices &amp; services.
         </div>
       </ha-card>`;
@@ -258,19 +301,21 @@ export class MilkyWayPlannerCard extends LitElement {
     const overview = this._overview;
     if (!overview) {
       return html`<ha-card>
-        <div class="empty">${this._error ? html`<span class="warn">${this._error}</span>` : "Loading from the Milky Way Planner integration…"}</div>
+        <div class="empty">${this._error ? html`<span class="warn">${this._error}</span>` : "Loading from the Astro Planner integration…"}</div>
       </ha-card>`;
     }
     if (overview.sites.length === 0) {
       return html`<ha-card>
         <div class="empty">
-          The Milky Way Planner integration has no sites yet. Add your AstroWeather sites in its settings (Settings → Devices &amp; services
-          → Milky Way Planner → Configure).
+          The Astro Planner integration has no sites yet. Add your AstroWeather sites in its settings (Settings → Devices &amp; services
+          → Astro Planner → Configure).
         </div>
       </ha-card>`;
     }
     const ctx = this._context(overview);
     if (this._tab === "calendar") this._ensureCalendar(this._calYear, this._calMonth);
+    const targetKey = dateKey(addDays(overview.tonight, this._targetOffset));
+    if (this._tab === "targets") this._ensureTargets(targetKey);
 
     return html`<ha-card>
       ${config.title ? html`<div class="header"><div class="title">${config.title}</div></div>` : nothing}
@@ -303,6 +348,22 @@ export class MilkyWayPlannerCard extends LitElement {
               selectedEntity: this._chartEntity || ctx.sites[0]?.entity || "",
               onSelectSite: (e) => (this._chartEntity = e),
             })
+          : this._tab === "targets"
+            ? renderTargets(ctx, {
+                offset: this._targetOffset,
+                group: this._targetGroup,
+                sort: this._targetSort,
+                framingOnly: this._framingOnly,
+                showAll: this._showAll,
+                data: this._targets.get(targetKey),
+                showers: this._showers,
+                onNavigate: (d) => (this._targetOffset = Math.max(0, this._targetOffset + d)),
+                onToday: () => (this._targetOffset = 0),
+                onGroup: (g) => ((this._targetGroup = g), (this._showAll = false)),
+                onSort: (v) => (this._targetSort = v),
+                onFramingOnly: (on) => (this._framingOnly = on),
+                onShowAll: () => (this._showAll = true),
+              })
           : renderCalendar(ctx, {
               year: this._calYear,
               month: this._calMonth,
@@ -329,8 +390,8 @@ export class MilkyWayPlannerCard extends LitElement {
   }
 }
 
-if (!customElements.get("milky-way-planner-card")) {
-  customElements.define("milky-way-planner-card", MilkyWayPlannerCard);
+if (!customElements.get("astro-planner-card")) {
+  customElements.define("astro-planner-card", AstroPlannerCard);
 }
 
 declare global {
@@ -340,8 +401,8 @@ declare global {
 }
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "milky-way-planner-card",
-  name: "Milky Way Planner",
-  description: "Rank dark-sky sites, chart hourly sky conditions and plan Milky Way core nights, from the Milky Way Planner integration.",
+  type: "astro-planner-card",
+  name: "Astro Planner",
+  description: "Rank dark-sky sites, chart hourly sky conditions, plan Milky Way nights and see which Messier objects are up, from the Astro Planner integration.",
   preview: false,
 });

@@ -111,7 +111,7 @@ const ROWS: Row[] = [
 ];
 
 export function renderSkyChart(ctx: ViewContext, h: ChartHandlers): TemplateResult {
-  if (ctx.sites.length === 0) return html`<div class="empty">Add AstroWeather sites in the Milky Way Planner integration's settings.</div>`;
+  if (ctx.sites.length === 0) return html`<div class="empty">Add AstroWeather sites in the Astro Planner integration's settings.</div>`;
   const site = ctx.sites.find((s) => s.entity === h.selectedEntity) ?? ctx.sites[0];
   const options = html`<select
     class="site-select"

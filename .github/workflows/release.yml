@@ -29,5 +29,5 @@ jobs:
       - run: npm run build
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/milky-way-planner-card.js
+          files: dist/astro-planner-card.js
           generate_release_notes: true

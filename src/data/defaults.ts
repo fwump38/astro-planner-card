@@ -1,6 +1,6 @@
 import type { CardConfig, ResolvedConfig, TabId } from "../types";
 
-export const ALL_TABS: TabId[] = ["ranking", "chart", "calendar"];
+export const ALL_TABS: TabId[] = ["ranking", "chart", "calendar", "targets"];
 
 export const DEFAULT_FORECAST_DAYS = 3;
 

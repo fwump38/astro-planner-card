@@ -9,9 +9,9 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 const dev = !!process.env.DEV;
 
 export default {
-  input: "src/milky-way-planner-card.ts",
+  input: "src/astro-planner-card.ts",
   output: {
-    file: "dist/milky-way-planner-card.js",
+    file: "dist/astro-planner-card.js",
     format: "es",
     inlineDynamicImports: true,
     sourcemap: dev,

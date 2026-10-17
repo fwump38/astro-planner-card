@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Milky Way Planner — dev harness</title>
+  <title>Astro Planner — dev harness</title>
   <style>
     :root {
       --primary-text-color: #212121;
@@ -31,10 +31,10 @@
     <strong>Dev harness</strong> (mocked <code>hass</code> and integration responses from <code>mock.json</code>; HA-only elements like ha-form aren't available here)
     <label><input type="checkbox" id="dark" /> dark</label>
   </div>
-  <milky-way-planner-card id="card"></milky-way-planner-card>
+  <astro-planner-card id="card"></astro-planner-card>
   <script type="module">
     // Canned responses from the integration for a fixed "now", written by the integration repo's scripts/export_card_mock.py:
-    //   PYTHONPATH=. .venv/bin/python scripts/export_card_mock.py ../milky-way-planner-card/dev/mock.json
+    //   PYTHONPATH=. .venv/bin/python scripts/export_card_mock.py ../astro-planner-card/dev/mock.json
     const mock = await (await fetch("./mock.json")).json();
 
     // Freeze the clock at the mock's "now" before the card loads.
@@ -49,16 +49,16 @@
         return RealDate.now() + offset;
       }
     };
-    await import("../dist/milky-way-planner-card.js");
+    await import("../dist/astro-planner-card.js");
 
     const sites = mock.overview.sites;
     const hass = {
       states: {},
       entities: {},
-      config: { latitude: 35.687, longitude: -105.938, elevation: 2100, time_zone: "America/Denver", components: ["milky_way_planner"] },
+      config: { latitude: 35.687, longitude: -105.938, elevation: 2100, time_zone: "America/Denver", components: ["astro_planner"] },
       locale: { language: "en", time_format: "12" },
       callWS: async (msg) => {
-        const type = msg.type.replace("milky_way_planner/", "");
+        const type = msg.type.replace("astro_planner/", "");
         if (type === "overview") return mock.overview;
         if (type === "calendar") {
           const start = new RealDate(msg.start + "T00:00:00Z");
@@ -67,13 +67,15 @@
             const key = new RealDate(start.getTime() + i * 86400e3).toISOString().slice(0, 10);
             if (mock.calendar[key]) nights.push(mock.calendar[key]);
           }
-          return { api_version: 2, nights };
+          return { api_version: 3, nights };
         }
         if (type === "sky_hours") {
           const sky = mock.sky[msg.entity];
           const from = new RealDate(msg.start).getTime();
-          return { api_version: 2, hours: sky.hours.filter((h) => h.t >= from).slice(0, msg.hours) };
+          return { api_version: 3, hours: sky.hours.filter((h) => h.t >= from).slice(0, msg.hours) };
         }
+        if (type === "targets") return { api_version: 3, ...mock.targets[msg.start] };
+        if (type === "showers") return { api_version: 3, showers: mock.showers };
         throw new Error(`unmocked ${msg.type}`);
       },
       connection: {
@@ -106,10 +108,15 @@
     }
 
     const card = document.getElementById("card");
-    card.setConfig({ type: "custom:milky-way-planner-card", title: "Milky Way planner", default_tab: new URLSearchParams(location.search).get("tab") ?? "ranking" });
+    card.setConfig({ type: "custom:astro-planner-card", title: "Astro planner", default_tab: new URLSearchParams(location.search).get("tab") ?? "ranking" });
     card.hass = hass;
     const month = new URLSearchParams(location.search).get("month"); // e.g. 2027-05
     if (month) { const [y, m] = month.split("-").map(Number); card._calYear = y; card._calMonth = m; }
+
+    const q = new URLSearchParams(location.search);
+    if (q.get("group")) card._targetGroup = q.get("group"); // e.g. galaxy
+    if (q.get("sort")) card._targetSort = q.get("sort"); // placement | brightness | altitude | name
+    if (q.get("offset")) card._targetOffset = Number(q.get("offset")); // nights after tonight
 
     if (new URLSearchParams(location.search).has("bare")) document.querySelector(".bar").style.display = "none";
     document.getElementById("dark").addEventListener("change", (e) => document.body.classList.toggle("dark", e.target.checked));

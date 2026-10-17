@@ -5,15 +5,31 @@ import type { Site } from "../types";
 export interface NightScore {
   site: Site;
   night: NightSummary;
-  /** 0–100, null when the core isn't visible after dark at all. */
+  /** 0–100 sky and weather quality for the night; null only for a site without coordinates. */
   score: number | null;
-  /** True when no forecast covers the core window, so the score is astronomy-only. */
+  /** True when the Milky Way core is up in dark, moonless sky, which lifts the score above what the sky alone can reach. */
+  milkyWay: boolean;
+  /** Target-independent sky quality 0–1 (Bortle class, moon-free darkness and city glow). */
+  sky: number;
+  /** The best-placed targets at the site that night, best first. */
+  targets: ScoredTarget[];
+  /** True when no forecast covers the scored hours, so the score is astronomy-only. */
   astroOnly: boolean;
-  /** Mean weather quality 0–1 over the core window (null without forecast). */
+  /** Mean weather quality 0–1 over the scored hours (null without forecast). */
   weather: number | null;
-  /** Mean total cloud cover % over the core window. */
+  /** Mean total cloud cover % over the same hours. */
   cloud: number | null;
   domeWarning: boolean;
+}
+
+export interface ScoredTarget {
+  id: string;
+  label: string;
+  kind: string;
+  score: number;
+  minutes: number;
+  peakAltitude: number;
+  direction: string | null;
 }
 
 export function scoreColorBand(score: number | null): "none" | "poor" | "fair" | "good" | "great" {

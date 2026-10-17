@@ -47,7 +47,7 @@ export async function subscribeForecasts(
           { type: "weather/subscribe_forecast", forecast_type: "hourly", entity_id },
         )
         .catch((err) => {
-          console.warn(`milky-way-planner-card: forecast subscription failed for ${entity_id}`, err);
+          console.warn(`astro-planner-card: forecast subscription failed for ${entity_id}`, err);
           return () => undefined;
         }),
     ),

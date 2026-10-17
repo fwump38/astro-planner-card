@@ -580,3 +580,110 @@ export const editorStyles = css`
     --mdc-theme-primary: var(--primary-color);
   }
 `;
+
+export const targetStyles = css`
+  .tg-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-bottom: 8px;
+  }
+  .tg-date {
+    font-weight: 500;
+    min-width: 8em;
+    text-align: center;
+  }
+  .tg-dark {
+    color: var(--csc-muted);
+    font-size: 0.85em;
+    margin-bottom: 8px;
+  }
+  .tg-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .tg-row {
+    align-items: center;
+    border-top: 1px solid var(--csc-border);
+    display: grid;
+    gap: 2px 10px;
+    grid-template-columns: 1fr auto;
+    padding: 6px 2px;
+  }
+  .tg-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tg-desig {
+    color: var(--csc-accent);
+  }
+  .tg-meta {
+    color: var(--csc-muted);
+    font-size: 0.8em;
+  }
+  .tg-when {
+    font-size: 0.85em;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .tg-bar {
+    background: var(--csc-border);
+    border-radius: 3px;
+    height: 4px;
+    margin-top: 3px;
+    overflow: hidden;
+    width: 100%;
+  }
+  .tg-bar > span {
+    background: var(--csc-accent);
+    display: block;
+    height: 100%;
+  }
+  .tg-badge {
+    border: 1px solid var(--csc-border);
+    border-radius: 8px;
+    font-size: 0.72em;
+    margin-left: 4px;
+    padding: 0 5px;
+    white-space: nowrap;
+  }
+  .tg-more {
+    color: var(--csc-muted);
+    font-size: 0.85em;
+    padding: 8px 2px;
+  }
+  .tg-showers {
+    margin-top: 14px;
+  }
+  .tg-showers h4 {
+    font-size: 0.95em;
+    font-weight: 500;
+    margin: 0 0 4px;
+  }
+  .sh-row {
+    align-items: center;
+    border-top: 1px solid var(--csc-border);
+    display: grid;
+    gap: 2px 10px;
+    grid-template-columns: 1fr auto;
+    padding: 5px 2px;
+  }
+  .summary-target {
+    color: var(--csc-muted);
+    font-size: 0.85em;
+    margin-bottom: 8px;
+  }
+  .cell-target {
+    display: inline-block;
+    max-width: 11em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
+  }
+`;

@@ -34,7 +34,7 @@ export interface HomeAssistant {
   themes?: { darkMode?: boolean };
 }
 
-export type TabId = "ranking" | "chart" | "calendar";
+export type TabId = "ranking" | "chart" | "calendar" | "targets";
 export type SortId = "score" | "distance" | "bortle";
 
 export interface LightDome {
@@ -45,14 +45,14 @@ export interface LightDome {
 }
 
 /**
- * The card only displays what the Milky Way Planner integration calculates. Sites, Bortle classes, drive times, light domes,
- * score weights and the sky thresholds are all configured there (Settings → Devices & services → Milky Way Planner).
+ * The card only displays what the Astro Planner integration calculates. Sites, Bortle classes, drive times, light domes,
+ * score weights and the sky thresholds are all configured there (Settings → Devices & services → Astro Planner).
  */
 export interface CardConfig {
   type: string;
   title?: string;
   default_tab?: TabId;
-  /** Tabs to show, in order. Defaults to all three. */
+  /** Tabs to show, in order. Defaults to all four. */
   tabs?: TabId[];
   /** Initial sort for the Tonight view. */
   default_sort?: SortId;
@@ -82,6 +82,10 @@ export interface PlannerSettings {
   calendar_min_altitude: number;
   calendar_best_minutes: number;
   dome_warning_threshold: number;
+  /** Targets tab: the minimum altitude, faintest magnitude and field of view (arcminutes, 0 = off) set in the integration. */
+  target_min_altitude?: number;
+  target_max_magnitude?: number;
+  fov_arcmin?: number;
 }
 
 export interface Observer {

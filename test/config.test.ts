@@ -3,13 +3,13 @@ import { resolveConfig } from "../src/data/defaults";
 
 describe("tabs config", () => {
   it("shows every tab by default", () => {
-    expect(resolveConfig({ type: "x" }).tabs).toEqual(["ranking", "chart", "calendar"]);
+    expect(resolveConfig({ type: "x" }).tabs).toEqual(["ranking", "chart", "calendar", "targets"]);
   });
   it("keeps canonical order and drops unknown/disabled tabs", () => {
     expect(resolveConfig({ type: "x", tabs: ["calendar", "ranking", "bogus" as any] }).tabs).toEqual(["ranking", "calendar"]);
   });
   it("falls back to all tabs when none are valid", () => {
-    expect(resolveConfig({ type: "x", tabs: [] }).tabs).toHaveLength(3);
+    expect(resolveConfig({ type: "x", tabs: [] }).tabs).toHaveLength(4);
   });
   it("moves default_tab to the first enabled tab when it is disabled", () => {
     const r = resolveConfig({ type: "x", tabs: ["chart", "calendar"], default_tab: "ranking" });
